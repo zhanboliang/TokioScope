@@ -217,7 +217,7 @@
 <style>
   .app {
     display: grid;
-    grid-template-rows: 36px 1fr;     /* compact toolbar — no text to align with, just traffic lights + icons */
+    grid-template-rows: 30px 1fr;     /* short bar — matches macOS's natural traffic-light center (~y=15) */
     height: 100vh;
     overflow: hidden;
     background: var(--ts-bg-1);
@@ -252,8 +252,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 26px;
+    width: 26px;
+    height: 22px;                /* fit in 30px bar with breathing room */
     padding: 0;
     background: transparent;
     border: none;
