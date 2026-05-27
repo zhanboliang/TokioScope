@@ -1,0 +1,11 @@
+mod tracer;
+mod user;
+
+fn main() {
+    tracer::bootstrap(
+        "{{FLAVOR}}",
+        {{WORKERS}},
+        {{BLOCKING_SLOTS}},
+        user::__ts_user_entry(),
+    );
+}

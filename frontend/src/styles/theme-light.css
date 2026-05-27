@@ -1,0 +1,40 @@
+/*
+ * IntelliJ IDEA Light 官方调色板
+ *  - 编辑器底  #FFFFFF
+ *  - 面板灰    #F2F2F2
+ *  - 次级面板  #E5E5E5
+ *  - 主前景    #000000
+ *  - 关键字    #0033B3
+ *  - 字符串    #008000
+ *  - 数字      #1750EB
+ *  - 常量      #871094
+ *  - 注释      #8C8C8C
+ *  - 选中      #A4CDFF
+ *  - 错误      #C7222D
+ */
+html[data-theme="light"] {
+  --ts-bg-0: #FFFFFF;
+  --ts-bg-1: #F2F2F2;
+  --ts-bg-2: #EDEDED;
+  --ts-bg-3: #E0E0E0;
+
+  --ts-fg:   #000000;
+  --ts-fg-2: #555555;
+  --ts-fg-3: #8C8C8C;
+
+  --ts-line:   #D6D6D6;
+  --ts-line-2: #B8B8B8;
+
+  --ts-accent:    #DB7D00;   /* warm IDEA-Light "warning" amber, prominent on white */
+  --ts-accent-2:  #FF9D24;
+
+  --ts-st-ready:    #1750EB;
+  --ts-st-running:  #DB7D00;
+  --ts-st-awaiting: #8C8C8C;
+  --ts-st-blocking: #871094;
+  --ts-st-done:     #008000;
+
+  --ts-error:  #C7222D;
+}
+
+html[data-theme="light"] { color-scheme: light; }

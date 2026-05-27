@@ -1,0 +1,18 @@
+# Rust
+/target
+/src-tauri/target
+/runner-template/target
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.svelte-kit/
+*.log
+.DS_Store
+
+# Tauri
+src-tauri/gen/
+src-tauri/Cargo.lock
+
+# Local cache
+.tokioscope-cache/

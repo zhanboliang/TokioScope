@@ -1,0 +1,18 @@
+{
+  "name": "tokioscope",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TokioScope — See how Tokio schedules your async code, tick by tick.",
+  "workspaces": ["frontend"],
+  "scripts": {
+    "dev": "cd frontend && bun run dev",
+    "build": "cd frontend && bun run build",
+    "check": "cd frontend && bun run check",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

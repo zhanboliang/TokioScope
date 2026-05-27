@@ -1,0 +1,37 @@
+/*
+ * IntelliJ IDEA High Contrast 官方调色板
+ *  - 底         #000000
+ *  - 面板       #1F1F1F
+ *  - 前景       #FFFFFF
+ *  - 强调黄     #FFC66D
+ *  - 关键字     #FF8000
+ *  - 字符串     #6BBA75
+ *  - 数字       #589DF6
+ *  - 常量       #BB86FC
+ *  - 注释       #C8C8C8
+ *  - 错误       #FF6B68
+ */
+html[data-theme="hc"] {
+  --ts-bg-0: #000000;
+  --ts-bg-1: #1F1F1F;
+  --ts-bg-2: #141414;
+  --ts-bg-3: #2A2A2A;
+
+  --ts-fg:   #FFFFFF;
+  --ts-fg-2: #C8C8C8;
+  --ts-fg-3: #808080;
+
+  --ts-line:   #2E2E2E;
+  --ts-line-2: #5A5A5A;
+
+  --ts-accent:    #FFC66D;
+  --ts-accent-2:  #FFD98C;
+
+  --ts-st-ready:    #589DF6;
+  --ts-st-running:  #FFC66D;
+  --ts-st-awaiting: #C8C8C8;
+  --ts-st-blocking: #BB86FC;
+  --ts-st-done:     #6BBA75;
+
+  --ts-error:  #FF6B68;
+}

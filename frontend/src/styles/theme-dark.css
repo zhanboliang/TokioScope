@@ -1,0 +1,40 @@
+/*
+ * IntelliJ IDEA Darcula 官方调色板
+ * 参考: IntelliJ Community Edition / JetBrains UI design tokens
+ *  - 编辑器底  #2B2B2B
+ *  - 面板/工具栏 #3C3F41
+ *  - 次级面板  #313335
+ *  - 主前景    #A9B7C6
+ *  - 关键字橙  #CC7832
+ *  - 字符串绿  #6A8759
+ *  - 数字蓝    #6897BB
+ *  - 常量紫    #9876AA
+ *  - 注释灰    #808080
+ *  - 错误红    #BC3F3C
+ */
+html[data-theme="dark"] {
+  --ts-bg-0: #2B2B2B;        /* editor canvas */
+  --ts-bg-1: #3C3F41;        /* panels / toolbars */
+  --ts-bg-2: #313335;        /* secondary panel (gutter, code pane) */
+  --ts-bg-3: #45494A;        /* hover / selected row */
+
+  --ts-fg:   #A9B7C6;
+  --ts-fg-2: #808080;
+  --ts-fg-3: #606366;
+
+  --ts-line:   #323232;
+  --ts-line-2: #4E5254;
+
+  --ts-accent:    #CC7832;   /* Darcula keyword orange */
+  --ts-accent-2:  #FFC66D;
+
+  --ts-st-ready:    #6897BB;
+  --ts-st-running:  #CC7832;
+  --ts-st-awaiting: #808080;
+  --ts-st-blocking: #9876AA;
+  --ts-st-done:     #6A8759;
+
+  --ts-error:  #BC3F3C;
+}
+
+html { color-scheme: dark; }

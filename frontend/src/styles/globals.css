@@ -1,0 +1,82 @@
+:root {
+  --ts-sans: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ts-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ts-cjk-zh: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC";
+  --ts-cjk-ja: "Hiragino Sans", "Yu Gothic", "Noto Sans CJK JP";
+  --ts-cjk-ko: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR";
+}
+
+html[data-cjk="zh"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-zh), system-ui, sans-serif; }
+html[data-cjk="ja"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-ja), system-ui, sans-serif; }
+html[data-cjk="ko"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-ko), system-ui, sans-serif; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--ts-sans);
+  background: var(--ts-bg-0);
+  color: var(--ts-fg);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* unselectable chrome (titlebar, toolbars, status bar) — but NOT the editor / output rows */
+.no-select,
+.app-titlebar,
+.pane-head,
+.app-titlebar *,
+.pane-head * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app { height: 100%; }
+
+button, input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+/*
+ * Scrollbars — use ONLY the standards `scrollbar-color` property.
+ * Any `::-webkit-scrollbar` rule switches WKWebView from native overlay
+ * (auto-fade) to legacy "always shown when needed", which is exactly what
+ * we don't want. macOS still respects the system preference (overlay vs
+ * always-on) when we stay out of the way.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ts-line-2) transparent;
+}
+
+/* CodeMirror gutter still benefits from a hard left-edge so the visual
+   transition from gutter→code is crisp even when the wrap is on. */
+.cm-gutters {
+  background: var(--ts-bg-1) !important;
+  border-right: 1px solid var(--ts-line) !important;
+}
+
+input[type="range"] {
+  appearance: none;
+  background: transparent;
+  height: 16px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--ts-line);
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--ts-accent);
+  border-radius: 50%;
+  margin-top: -5px;
+}
