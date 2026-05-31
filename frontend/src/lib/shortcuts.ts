@@ -11,7 +11,8 @@ export const SHORTCUTS: ShortcutGroup[] = [
     group: "播放控制",
     items: [
       { keys: "Space", action: "播放 / 暂停" },
-      { keys: "→ / ←", action: "单步前进 / 后退" },
+      { keys: "→ / ←", action: "单步前进 / 后退（一帧）" },
+      { keys: "Shift + → / ←", action: "精细移动播放头" },
       { keys: "R", action: "重置(回到 tick 0)" },
       { keys: "Home / End", action: "跳到开始 / 结束" },
       { keys: "L", action: "切换循环播放" },
@@ -76,11 +77,14 @@ export function bindGlobal(loadExample: (idx: number) => void) {
         break;
       case "ArrowRight":
         e.preventDefault();
-        if (store.totalTicks) store.playhead = Math.min(store.totalTicks - 1, store.playhead + 1);
+        if (store.totalTicks)
+          store.playhead = Math.min(store.totalTicks - 1,
+            e.shiftKey ? store.playhead + 0.1 : Math.floor(store.playhead) + 1);
         break;
       case "ArrowLeft":
         e.preventDefault();
-        store.playhead = Math.max(0, store.playhead - 1);
+        store.playhead = Math.max(0,
+          e.shiftKey ? store.playhead - 0.1 : Math.ceil(store.playhead) - 1);
         break;
       case "r":
       case "R":

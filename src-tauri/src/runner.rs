@@ -12,6 +12,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+/// Hard ceiling on lines forwarded from one run, so a runaway program can't
+/// flood the webview IPC bridge. The frontend caps its visualisation far below
+/// this and cancels first; this is only a last-resort backstop.
+const MAX_FORWARDED_LINES: u64 = 200_000;
+
 #[derive(Default, Clone, Serialize)]
 pub struct RunnerStatus {
     pub ready: bool,
@@ -30,6 +35,10 @@ struct Inner {
     status: RunnerStatus,
     child: Option<Child>,
     layout: Option<CrateLayout>,
+    /// Bumped on every `start`. A reader task only owns shared state while this
+    /// still matches the generation it was spawned with — so a stale reader
+    /// from a superseded run can't stomp a newer run's child/status.
+    generation: u64,
 }
 
 impl Runner {
@@ -40,6 +49,7 @@ impl Runner {
                 status: RunnerStatus::default(),
                 child: None,
                 layout: None,
+                generation: 0,
             })),
         }
     }
@@ -130,8 +140,8 @@ impl Runner {
         // Cancel any prior run.
         self.cancel().await;
 
-        let mut child = Command::new("cargo")
-            .args(["run", "--release", "--quiet"])
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "--release", "--quiet"])
             .current_dir(&layout.root)
             .env("TS_FLAVOR", match runtime.flavor {
                 Flavor::CurrentThread => "current_thread",
@@ -141,24 +151,33 @@ impl Runner {
             .env("TS_BLOCKING_SLOTS", runtime.blocking_slots.to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        // `cargo run` execs the user binary as a *child* of cargo. Put the whole
+        // thing in its own process group so cancel() can signal the entire tree;
+        // killing cargo alone would orphan the still-running user program.
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd
             .spawn()
             .map_err(|e| TsError::Cargo(e.to_string()))?;
 
         let stdout = child.stdout.take().ok_or_else(|| TsError::Other("no stdout".into()))?;
         let stderr = child.stderr.take().ok_or_else(|| TsError::Other("no stderr".into()))?;
 
-        {
+        let generation = {
             let mut g = self.inner.lock().await;
+            g.generation += 1;
             g.status.running = true;
             g.child = Some(child);
-        }
+            g.generation
+        };
         let _ = self.app.emit("ts:status", self.status().await);
 
         let app = self.app.clone();
         let inner = self.inner.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
+            let mut forwarded: u64 = 0;
             while let Ok(Some(line)) = lines.next_line().await {
                 if let Some(rest) = line.strip_prefix(EVENT_PREFIX) {
                     match serde_json::from_str::<serde_json::Value>(rest) {
@@ -175,6 +194,23 @@ impl Runner {
                 } else {
                     let _ = app.emit("ts:stdout", line);
                 }
+
+                // Backstop against a runaway program (e.g. tight infinite loop)
+                // flooding the IPC bridge faster than the UI can cancel it.
+                forwarded += 1;
+                if forwarded >= MAX_FORWARDED_LINES {
+                    let _ = app.emit(
+                        "ts:warn",
+                        format!("output limit ({MAX_FORWARDED_LINES}) reached — stopping run"),
+                    );
+                    let mut g = inner.lock().await;
+                    if let Some(mut c) = g.child.take() {
+                        kill_process_tree(&c);
+                        let _ = c.start_kill();
+                    }
+                    drop(g);
+                    break;
+                }
             }
 
             // Drain stderr (cargo build output / panics).
@@ -184,14 +220,21 @@ impl Runner {
             }
 
             let mut g = inner.lock().await;
+            // A rerun bumped the generation; the child handle and status now
+            // belong to the newer run, so leave them alone.
+            if g.generation != generation {
+                return;
+            }
             let exit = if let Some(mut c) = g.child.take() {
                 c.wait().await.ok().and_then(|s| s.code())
             } else {
                 None
             };
             g.status.running = false;
+            let status = g.status.clone();
             drop(g);
             let _ = app.emit("ts:done", exit);
+            let _ = app.emit("ts:status", status);
         });
 
         Ok(())
@@ -200,8 +243,36 @@ impl Runner {
     pub async fn cancel(&self) {
         let mut g = self.inner.lock().await;
         if let Some(mut c) = g.child.take() {
+            // Kill the whole process group, not just cargo — otherwise the user
+            // binary cargo spawned keeps running and keeps streaming events.
+            kill_process_tree(&c);
             let _ = c.start_kill();
         }
         g.status.running = false;
+        drop(g);
+        let _ = self.app.emit("ts:status", self.status().await);
+    }
+}
+
+/// Terminate the spawned child *and* everything it spawned. `cargo run` execs
+/// the user binary as a child of cargo, so signalling only cargo leaves the
+/// program orphaned and running. On Unix the child is spawned in its own
+/// process group (see `start`), so a negative PID signals the entire group.
+fn kill_process_tree(child: &Child) {
+    let Some(pid) = child.id() else { return };
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        // `/T` kills the whole tree rooted at cargo. Block until taskkill has
+        // finished walking it — otherwise the caller dropping/`start_kill`-ing
+        // cargo's handle could terminate cargo first and orphan the child.
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }

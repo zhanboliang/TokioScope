@@ -213,7 +213,7 @@ where
         id,
         parent,
         line,
-        name: format!("task#{id}"),
+        name: format!("task#{id} @L{line}"),
         blocking: false,
     });
 
@@ -249,7 +249,7 @@ where
         id,
         parent,
         line,
-        name: format!("blocking#{id}"),
+        name: format!("blocking#{id} @L{line}"),
         blocking: true,
     });
     emit(&Event::BlockingStart {
@@ -339,6 +339,11 @@ pub fn println(line: u32, text: String) {
         line,
         text,
     });
+    // Advance one tick per println so synchronous, output-driven code (no `.await`
+    // points) still produces a multi-step, playable timeline instead of collapsing
+    // into a single frame. Mirrors the bootstrap loop's Tick emission.
+    let closed = TICK.fetch_add(1, Ordering::SeqCst);
+    emit(&Event::Tick { tick: closed });
 }
 
 pub fn join_enter(line: u32) {

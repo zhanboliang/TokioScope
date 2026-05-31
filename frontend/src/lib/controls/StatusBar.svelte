@@ -1,8 +1,5 @@
 <script lang="ts">
   import { store } from "../store.svelte";
-  import { cycleTheme } from "../theme";
-
-  const THEME_LABEL: Record<string, string> = { dark: "Dark", light: "Light", hc: "High-Contrast" };
 
   const f = $derived(store.currentFrame);
   const flavor = $derived(store.sim?.flavor ?? store.analysis?.runtime.flavor ?? "—");
@@ -35,11 +32,6 @@
   {/if}
 
   <span class="spacer"></span>
-
-  <button onclick={cycleTheme} title="Cycle theme (Dark → Light → HC)">
-    {THEME_LABEL[store.theme]}
-  </button>
-  <button onclick={() => store.showShortcuts = true} title="?">?</button>
 </section>
 
 <style>
@@ -57,20 +49,9 @@
   .stat b { color: var(--ts-fg); font-weight: 600; }
   .flavor b { color: var(--ts-accent); }
   .spacer { flex: 1; }
-  .indicator { padding: 2px 8px; border-radius: 2px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .indicator { padding: 2px 8px; border-radius: 2px; font-size: 10px; letter-spacing: 0.02em; }
   .building, .run { background: rgba(232, 133, 58, 0.18); color: var(--ts-accent); }
   .ok { background: rgba(91, 174, 122, 0.18); color: var(--ts-st-done); }
   .err { background: rgba(192, 80, 80, 0.18); color: #e07070; }
   .wait { background: rgba(139, 149, 165, 0.18); color: var(--ts-fg-3); }
-  button {
-    background: transparent;
-    border: 1px solid var(--ts-line-2);
-    color: var(--ts-fg-2);
-    padding: 2px 8px;
-    font-family: var(--ts-mono);
-    font-size: 10px;
-    border-radius: 2px;
-    cursor: pointer;
-  }
-  button:hover { color: var(--ts-accent); border-color: var(--ts-accent); }
 </style>

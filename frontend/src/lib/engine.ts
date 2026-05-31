@@ -55,48 +55,50 @@ export interface SimResult {
 }
 
 /**
- * Walk the raw event stream and produce one Frame per tick boundary.
- * Frames carry the entire visualisation state, so playback / scrubbing is O(1).
+ * Incremental simulation builder. Each event is processed exactly once via
+ * `push`, appending one Frame per tick boundary — so streaming N events is O(N)
+ * rather than the O(N²) of re-walking the whole log on every tick. Frames carry
+ * the entire visualisation state, so playback / scrubbing stays O(1).
  */
-export function aggregate(events: RunnerEvent[]): SimResult {
-  let flavor = "multi_thread";
-  let workerCount = 4;
-  let blockingSlots = 8;
+export class Aggregator {
+  flavor = "multi_thread";
+  workerCount = 4;
+  blockingSlots = 8;
 
-  const tasks = new Map<number, TaskSnapshot>();
-  const ready: number[] = [];
-  const wakeLog: WakeEntry[] = [];
-  const printlns: PrintlnEntry[] = [];
-  const blockingByTask = new Map<number, BlockingSlot>();
-  const blocking: BlockingSlot[] = [];
-  const frames: Frame[] = [];
+  private tasks = new Map<number, TaskSnapshot>();
+  private ready: number[] = [];
+  private wakeLog: WakeEntry[] = [];
+  private printlns: PrintlnEntry[] = [];
+  private blockingByTask = new Map<number, BlockingSlot>();
+  private blocking: BlockingSlot[] = [];
+  frames: Frame[] = [];
 
-  const ensureBlocking = () => {
-    if (blocking.length === 0)
-      for (let i = 0; i < blockingSlots; i++)
-        blocking.push({ taskId: null, startTick: 0, durationTicks: 0 });
-  };
+  private ensureBlocking() {
+    if (this.blocking.length === 0)
+      for (let i = 0; i < this.blockingSlots; i++)
+        this.blocking.push({ taskId: null, startTick: 0, durationTicks: 0 });
+  }
 
-  const setState = (id: number, s: TaskState, line?: number) => {
-    const t = tasks.get(id);
+  private setState(id: number, s: TaskState, line?: number) {
+    const t = this.tasks.get(id);
     if (!t) return;
     t.state = s;
     if (line !== undefined) t.currentLine = line;
     t.eventCount += 1;
-  };
+  }
 
-  const pushReady = (id: number) => {
-    if (!ready.includes(id)) ready.push(id);
-  };
-  const removeReady = (id: number) => {
-    const i = ready.indexOf(id);
-    if (i >= 0) ready.splice(i, 1);
-  };
+  private pushReady(id: number) {
+    if (!this.ready.includes(id)) this.ready.push(id);
+  }
+  private removeReady(id: number) {
+    const i = this.ready.indexOf(id);
+    if (i >= 0) this.ready.splice(i, 1);
+  }
 
-  const workersFrom = (running: number[]): (number | null)[] => {
-    const arr: (number | null)[] = new Array(workerCount).fill(null);
+  private workersFrom(running: number[]): (number | null)[] {
+    const arr: (number | null)[] = new Array(this.workerCount).fill(null);
     for (const id of running) {
-      const w = id % Math.max(1, workerCount);
+      const w = id % Math.max(1, this.workerCount);
       // place at chosen slot or first free
       if (arr[w] == null) arr[w] = id;
       else {
@@ -105,18 +107,18 @@ export function aggregate(events: RunnerEvent[]): SimResult {
       }
     }
     return arr;
-  };
+  }
 
-  for (const ev of events) {
+  push(ev: RunnerEvent) {
     switch (ev.kind) {
       case "boot":
-        flavor = ev.flavor;
-        workerCount = Math.max(1, ev.worker_threads);
-        blockingSlots = ev.blocking_slots;
-        ensureBlocking();
+        this.flavor = ev.flavor;
+        this.workerCount = Math.max(1, ev.worker_threads);
+        this.blockingSlots = ev.blocking_slots;
+        this.ensureBlocking();
         break;
       case "task_spawn":
-        tasks.set(ev.id, {
+        this.tasks.set(ev.id, {
           id: ev.id,
           name: ev.name,
           parent: ev.parent,
@@ -129,84 +131,83 @@ export function aggregate(events: RunnerEvent[]): SimResult {
           blocking: ev.blocking,
           durationTicks: 0,
         });
-        pushReady(ev.id);
+        this.pushReady(ev.id);
         break;
       case "task_poll":
-        setState(ev.id, "running", ev.line);
-        removeReady(ev.id);
+        this.setState(ev.id, "running", ev.line);
+        this.removeReady(ev.id);
         break;
       case "task_yield":
-        setState(ev.id, "ready", ev.line);
-        pushReady(ev.id);
+        this.setState(ev.id, "ready", ev.line);
+        this.pushReady(ev.id);
         break;
       case "task_await": {
         const reason = ev.reason;
         const next: TaskState = reason === "blocking" ? "blocking" : "awaiting";
-        setState(ev.id, next, ev.line);
-        const t = tasks.get(ev.id);
+        this.setState(ev.id, next, ev.line);
+        const t = this.tasks.get(ev.id);
         if (t) t.awaitReason = reason;
-        removeReady(ev.id);
+        this.removeReady(ev.id);
         break;
       }
       case "task_wake":
-        setState(ev.id, "ready");
-        pushReady(ev.id);
-        wakeLog.push({ tick: ev.tick, taskId: ev.id, cause: ev.cause });
-        if (wakeLog.length > 16) wakeLog.shift();
+        this.setState(ev.id, "ready");
+        this.pushReady(ev.id);
+        this.wakeLog.push({ tick: ev.tick, taskId: ev.id, cause: ev.cause });
+        if (this.wakeLog.length > 16) this.wakeLog.shift();
         break;
       case "blocking_start": {
-        ensureBlocking();
-        const idx = ev.slot < blocking.length ? ev.slot : blocking.findIndex((s) => s.taskId == null);
+        this.ensureBlocking();
+        const idx = ev.slot < this.blocking.length ? ev.slot : this.blocking.findIndex((s) => s.taskId == null);
         if (idx >= 0) {
-          blocking[idx] = { taskId: ev.id, startTick: ev.tick, durationTicks: ev.duration_ticks };
-          blockingByTask.set(ev.id, blocking[idx]);
+          this.blocking[idx] = { taskId: ev.id, startTick: ev.tick, durationTicks: ev.duration_ticks };
+          this.blockingByTask.set(ev.id, this.blocking[idx]);
         }
-        setState(ev.id, "blocking");
+        this.setState(ev.id, "blocking");
         break;
       }
       case "blocking_done": {
-        ensureBlocking();
-        const idx = ev.slot < blocking.length ? ev.slot : -1;
+        this.ensureBlocking();
+        const idx = ev.slot < this.blocking.length ? ev.slot : -1;
         if (idx >= 0) {
-          blocking[idx] = { taskId: null, startTick: 0, durationTicks: 0 };
+          this.blocking[idx] = { taskId: null, startTick: 0, durationTicks: 0 };
         }
-        blockingByTask.delete(ev.id);
-        setState(ev.id, "ready");
-        pushReady(ev.id);
+        this.blockingByTask.delete(ev.id);
+        this.setState(ev.id, "ready");
+        this.pushReady(ev.id);
         break;
       }
       case "timer_fire":
-        setState(ev.id, "ready");
-        pushReady(ev.id);
-        wakeLog.push({ tick: ev.tick, taskId: ev.id, cause: "timer_fire" });
-        if (wakeLog.length > 16) wakeLog.shift();
+        this.setState(ev.id, "ready");
+        this.pushReady(ev.id);
+        this.wakeLog.push({ tick: ev.tick, taskId: ev.id, cause: "timer_fire" });
+        if (this.wakeLog.length > 16) this.wakeLog.shift();
         break;
       case "task_done": {
-        const t = tasks.get(ev.id);
+        const t = this.tasks.get(ev.id);
         if (t) {
           t.state = "done";
           t.doneTick = ev.tick;
           t.durationTicks = ev.tick - t.bornTick;
         }
-        removeReady(ev.id);
+        this.removeReady(ev.id);
         break;
       }
       case "println":
-        printlns.push({ tick: ev.tick, taskId: ev.id, line: ev.line, text: ev.text });
+        this.printlns.push({ tick: ev.tick, taskId: ev.id, line: ev.line, text: ev.text });
         break;
       case "tick": {
         const running: number[] = [];
-        for (const t of tasks.values()) if (t.state === "running") running.push(t.id);
-        const frame: Frame = {
+        for (const t of this.tasks.values()) if (t.state === "running") running.push(t.id);
+        this.frames.push({
           tick: ev.tick,
-          workers: workersFrom(running),
-          blocking: blocking.map((s) => ({ ...s })),
-          ready: ready.slice(),
-          tasks: new Map([...tasks].map(([k, v]) => [k, { ...v }])),
-          wakeLog: wakeLog.slice(),
-          printlns: printlns.slice(),
-        };
-        frames.push(frame);
+          workers: this.workersFrom(running),
+          blocking: this.blocking.map((s) => ({ ...s })),
+          ready: this.ready.slice(),
+          tasks: new Map([...this.tasks].map(([k, v]) => [k, { ...v }])),
+          wakeLog: this.wakeLog.slice(),
+          printlns: this.printlns.slice(),
+        });
         break;
       }
       case "finish":
@@ -215,5 +216,20 @@ export function aggregate(events: RunnerEvent[]): SimResult {
     }
   }
 
-  return { flavor, workerCount, blockingSlots, frames, printlns };
+  result(): SimResult {
+    return {
+      flavor: this.flavor,
+      workerCount: this.workerCount,
+      blockingSlots: this.blockingSlots,
+      frames: this.frames,
+      printlns: this.printlns,
+    };
+  }
+}
+
+/** One-shot convenience wrapper (used by tests / non-streaming callers). */
+export function aggregate(events: RunnerEvent[]): SimResult {
+  const agg = new Aggregator();
+  for (const ev of events) agg.push(ev);
+  return agg.result();
 }

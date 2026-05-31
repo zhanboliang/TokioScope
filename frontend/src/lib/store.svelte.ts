@@ -1,5 +1,9 @@
-import { aggregate, type Frame, type SimResult } from "./engine";
+import { Aggregator, type Frame, type SimResult } from "./engine";
 import type { ParseReport, RunnerEvent, RunnerStatus } from "./ipc";
+
+// Bound runaway programs (e.g. infinite loops) so the UI stays responsive.
+const MAX_FRAMES = 1500;   // tick-frames kept; once hit, collection stops + run is cancelled
+const MAX_OUTPUT = 1000;   // stdout / stderr scrollback lines
 
 const DEFAULT_CODE = `use std::time::Duration;
 
@@ -25,9 +29,16 @@ class Store {
     last_error: null,
   });
 
-  // Live event buffer
-  events = $state<RunnerEvent[]>([]);
-  sim = $state<SimResult | null>(null);
+  // Live simulation (raw — not deeply proxied; the frames array is large and is
+  // reassigned wholesale on each drain to trigger reactivity).
+  sim = $state.raw<SimResult | null>(null);
+  capped = $state(false);
+
+  // Incremental builder + buffers drained once per animation frame (see drain()).
+  #agg = new Aggregator();
+  #pendEv: RunnerEvent[] = [];
+  #pendOut: { tick: number; text: string }[] = [];
+  #pendErr: string[] = [];
 
   // Playback
   playhead = $state(0);
@@ -52,7 +63,9 @@ class Store {
 
   get currentFrame(): Frame | null {
     if (!this.sim || this.sim.frames.length === 0) return null;
-    const idx = Math.min(this.playhead, this.sim.frames.length - 1);
+    // playhead is fractional during playback — floor to the current tick so the
+    // pools / editor show a real frame instead of frames[1.7] === undefined.
+    const idx = Math.max(0, Math.min(Math.floor(this.playhead), this.sim.frames.length - 1));
     return this.sim.frames[idx];
   }
 
@@ -61,23 +74,73 @@ class Store {
   }
 
   reset() {
-    this.events = [];
+    this.#agg = new Aggregator();
+    this.#pendEv = [];
+    this.#pendOut = [];
+    this.#pendErr = [];
     this.sim = null;
+    this.capped = false;
     this.playhead = 0;
     this.playing = false;
     this.rawStdout = [];
     this.rawStderr = [];
   }
 
-  ingest(ev: RunnerEvent) {
-    this.events.push(ev);
-    // Re-aggregate at tick boundary for cheap incremental visualization.
-    if (ev.kind === "tick" || ev.kind === "finish") {
-      this.sim = aggregate(this.events);
+  // ── Buffered ingestion ─────────────────────────────────────────────
+  // Listeners call these (cheap pushes only) so the main thread keeps
+  // returning to the event loop even under a flood of events — which is
+  // what keeps the Stop button clickable. drain() does the real work,
+  // throttled to one call per animation frame.
+
+  bufferEvent(ev: RunnerEvent) {
+    if (!this.capped) this.#pendEv.push(ev);
+  }
+  bufferStdout(text: string) {
+    this.#pendOut.push({ tick: this.sim?.frames.length ?? 0, text });
+  }
+  bufferStderr(text: string) {
+    this.#pendErr.push(text);
+  }
+
+  /** Process all buffered output. Returns true if the frame cap was just hit
+   *  (the caller should then cancel the run). */
+  drain(): boolean {
+    let justCapped = false;
+    if (this.#pendEv.length && !this.capped) {
+      const evs = this.#pendEv;
+      this.#pendEv = [];
+      for (const ev of evs) {
+        this.#agg.push(ev);
+        if (this.#agg.frames.length >= MAX_FRAMES) {
+          this.capped = true;
+          justCapped = true;
+          this.#pendEv = [];
+          this.#append(this.rawStderr, [`⚠ 已达可视化上限 ${MAX_FRAMES} 帧，停止采集并自动终止运行`], (v) => (this.rawStderr = v));
+          break;
+        }
+      }
+      this.sim = this.#agg.result();
       if (this.follow && this.sim.frames.length > 0) {
         this.playhead = this.sim.frames.length - 1;
       }
     }
+    if (this.#pendOut.length) {
+      const b = this.#pendOut;
+      this.#pendOut = [];
+      this.#append(this.rawStdout, b, (v) => (this.rawStdout = v));
+    }
+    if (this.#pendErr.length) {
+      const b = this.#pendErr;
+      this.#pendErr = [];
+      this.#append(this.rawStderr, b, (v) => (this.rawStderr = v));
+    }
+    return justCapped;
+  }
+
+  #append<T>(cur: T[], batch: T[], set: (next: T[]) => void) {
+    if (!batch.length) return;
+    const next = cur.concat(batch);
+    set(next.length > MAX_OUTPUT ? next.slice(next.length - MAX_OUTPUT) : next);
   }
 }
 

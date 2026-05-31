@@ -7,12 +7,10 @@
   import CodeEditor from "./lib/editor/CodeEditor.svelte";
   import Timeline from "./lib/timeline/Timeline.svelte";
   import Minimap from "./lib/timeline/Minimap.svelte";
-  import WorkerPool from "./lib/pool/WorkerPool.svelte";
-  import BlockingPool from "./lib/pool/BlockingPool.svelte";
-  import ReadyQueue from "./lib/pool/ReadyQueue.svelte";
-  import EventLog from "./lib/pool/EventLog.svelte";
+  import SchedulerStage from "./lib/stage/SchedulerStage.svelte";
   import PlaybackBar from "./lib/controls/PlaybackBar.svelte";
   import StatusBar from "./lib/controls/StatusBar.svelte";
+  import MenuButton from "./lib/controls/MenuButton.svelte";
   import OutputPanel from "./lib/output/OutputPanel.svelte";
   import Shortcuts from "./lib/help/Shortcuts.svelte";
   import { type } from "@tauri-apps/plugin-os";
@@ -60,15 +58,15 @@
       console.error("runner status check failed; running in UI-only mode", e);
     }
 
-    unlisteners.push(await onEvent((e) => store.ingest(e)));
-    unlisteners.push(await onStdout((t) => {
-      const tick = store.sim?.frames.length ?? 0;
-      store.rawStdout = [...store.rawStdout, { tick, text: t }];
+    // Listeners only buffer (cheap) — the heavy aggregation happens in store.drain(),
+    // throttled to one call per animation frame so the UI thread stays responsive.
+    unlisteners.push(await onEvent((e) => store.bufferEvent(e)));
+    unlisteners.push(await onStdout((t) => store.bufferStdout(t)));
+    unlisteners.push(await onStderr((t) => store.bufferStderr(t)));
+    unlisteners.push(await onDone(() => {
+      if (store.drain()) ipc.cancelRun().catch(console.error);
+      store.playing = false;
     }));
-    unlisteners.push(await onStderr((t) => {
-      store.rawStderr = [...store.rawStderr, t];
-    }));
-    unlisteners.push(await onDone(() => { store.playing = false; }));
     unlisteners.push(await onStatus((s) => { store.status = s; }));
 
     analyze();
@@ -76,6 +74,8 @@
 
     let last = performance.now();
     const tick = (t: number) => {
+      // Drain buffered runner output once per frame; cancel a runaway run at the cap.
+      if (store.drain()) ipc.cancelRun().catch(console.error);
       const dt = (t - last) / 1000;
       last = t;
       if (store.playing && store.totalTicks) {
@@ -135,13 +135,13 @@
 <div class="app">
   <header class="app-titlebar" data-tauri-drag-region>
     <div class="spacer" data-tauri-drag-region></div>
-    <div class="actions" data-tauri-drag-region>
+    <div class="run-group">
       {#if !store.status.running}
-        <!-- idle: hollow play triangle (IDEA "Run") -->
+        <!-- idle: filled play triangle (IDEA "Run") -->
         <button class="icon-btn run-idle" onclick={runCode}
           title="运行 (⌘+Enter)" aria-label="Run">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
-            fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"
+            fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
             <path d="M5 3.2 L12.5 8 L5 12.8 Z"/>
           </svg>
         </button>
@@ -162,6 +162,8 @@
         </button>
       {/if}
     </div>
+    <span class="bar-sep" aria-hidden="true"></span>
+    <MenuButton />
   </header>
 
   <div class="shell">
@@ -197,12 +199,7 @@
 
     <Minimap />
 
-    <section class="pools">
-      <WorkerPool />
-      <BlockingPool />
-      <ReadyQueue />
-      <EventLog />
-    </section>
+    <SchedulerStage />
 
     <PlaybackBar />
     <StatusBar />
@@ -239,12 +236,28 @@
 
   .spacer { flex: 1 1 auto; height: 100%; }
 
-  .actions {
+  /* run controls — borderless icon buttons, no outer frame */
+  .run-group {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     flex-shrink: 0;
-    height: 100%;
+    -webkit-app-region: no-drag;
+  }
+  .run-group .icon-btn { background: transparent; }
+  /* idle Run reads as the primary action — a soft green wash */
+  .run-group .run-idle { background: rgba(106, 135, 89, 0.16); }
+  .run-group .run-idle:hover { background: rgba(106, 135, 89, 0.32); }
+  .run-group .rerun:hover { background: rgba(106, 135, 89, 0.24); }
+  .run-group .stop:hover { background: rgba(188, 63, 60, 0.22); }
+
+  /* thin vertical divider between the run widget and the ⋮ menu */
+  .bar-sep {
+    flex-shrink: 0;
+    width: 1px;
+    height: 16px;
+    margin: 0 6px;
+    background: var(--ts-line-2);
   }
 
   /* IDEA / VS Code style icon buttons */
@@ -252,23 +265,24 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 22px;                /* fit in 30px bar with breathing room */
+    width: 28px;
+    height: 23px;                /* fit in 30px bar with breathing room */
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: 5px;
     cursor: pointer;
-    transition: background 80ms ease;
+    transition: background 110ms ease, transform 60ms ease;
     -webkit-app-region: no-drag;
   }
-  .icon-btn:active:not(:disabled) { transform: translateY(0.5px); }
+  .icon-btn:active:not(:disabled) { transform: scale(0.92); }
+  .icon-btn svg { display: block; }
 
-  /* idle Run — outlined green triangle */
+  /* idle Run — confident filled green triangle */
   .icon-btn.run-idle { color: var(--ts-st-done); }
   .icon-btn.run-idle:hover { background: rgba(106, 135, 89, 0.18); }
 
-  /* running Rerun — filled green triangle on subtle bg "chip" */
+  /* running Rerun — filled green triangle */
   .icon-btn.rerun {
     color: var(--ts-st-done);
     background: rgba(106, 135, 89, 0.12);
@@ -312,8 +326,7 @@
     flex-shrink: 0;
   }
   .pane-head .title {
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.04em;
     color: var(--ts-fg-3);
   }
 
@@ -333,14 +346,4 @@
   }
   .tl-slot { flex-shrink: 0; min-height: 120px; overflow: hidden; display: flex; }
   .tl-slot > :global(*) { flex: 1 1 auto; min-width: 0; }
-  .pools {
-    flex: 1 1 auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1.4fr;
-    gap: 1px;
-    background: var(--ts-line);
-    border-top: 1px solid var(--ts-line);
-    min-height: 140px;
-    overflow: hidden;
-  }
 </style>

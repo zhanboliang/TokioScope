@@ -3,18 +3,40 @@ import { store } from "./store.svelte";
 
 let backing: PluginStore | null = null;
 
+export const DEFAULTS = {
+  codePaneWidth: 420,
+  outputHeight: 140,
+  timelineHeight: 260,
+  zoom: 20,
+  speed: 4,
+  loop: false,
+  follow: true,
+};
+
 export async function initPrefs() {
   backing = await PluginStore.load("prefs.json", { autoSave: true, defaults: {} });
   store.theme = ((await backing.get<string>("theme")) as "dark" | "light" | "hc") || "dark";
-  store.codePaneWidth = (await backing.get<number>("codePaneWidth")) ?? 420;
-  store.outputHeight = (await backing.get<number>("outputHeight")) ?? 140;
-  store.timelineHeight = (await backing.get<number>("timelineHeight")) ?? 260;
-  store.zoom = (await backing.get<number>("zoom")) ?? 20;
-  store.speed = (await backing.get<number>("speed")) ?? 4;
-  store.loop_ = (await backing.get<boolean>("loop")) ?? false;
-  store.follow = (await backing.get<boolean>("follow")) ?? true;
+  store.codePaneWidth = (await backing.get<number>("codePaneWidth")) ?? DEFAULTS.codePaneWidth;
+  store.outputHeight = (await backing.get<number>("outputHeight")) ?? DEFAULTS.outputHeight;
+  store.timelineHeight = (await backing.get<number>("timelineHeight")) ?? DEFAULTS.timelineHeight;
+  store.zoom = (await backing.get<number>("zoom")) ?? DEFAULTS.zoom;
+  store.speed = (await backing.get<number>("speed")) ?? DEFAULTS.speed;
+  store.loop_ = (await backing.get<boolean>("loop")) ?? DEFAULTS.loop;
+  store.follow = (await backing.get<boolean>("follow")) ?? DEFAULTS.follow;
 
   document.documentElement.dataset.theme = store.theme;
+}
+
+/** Restore layout & playback prefs to their defaults (theme is left untouched). */
+export function resetLayout() {
+  store.codePaneWidth = DEFAULTS.codePaneWidth;
+  store.outputHeight = DEFAULTS.outputHeight;
+  store.timelineHeight = DEFAULTS.timelineHeight;
+  store.zoom = DEFAULTS.zoom;
+  store.speed = DEFAULTS.speed;
+  store.loop_ = DEFAULTS.loop;
+  store.follow = DEFAULTS.follow;
+  persistPrefs();
 }
 
 let debounceTimer: number | undefined;
