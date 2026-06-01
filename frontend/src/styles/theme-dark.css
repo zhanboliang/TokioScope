@@ -16,7 +16,7 @@ html[data-theme="dark"] {
   --ts-bg-0: #2B2B2B;        /* editor canvas */
   --ts-bg-1: #3C3F41;        /* panels / toolbars */
   --ts-bg-2: #313335;        /* secondary panel (gutter, code pane) */
-  --ts-bg-3: #45494A;        /* hover / selected row */
+  --ts-bg-3: #55595B;        /* hover / selected row — lifted for clearer contrast vs. panels */
 
   --ts-fg:   #A9B7C6;
   --ts-fg-2: #808080;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import { EditorState, Compartment, RangeSet } from "@codemirror/state";
-  import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, gutters, gutter, GutterMarker, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
+  import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, gutters, gutter, GutterMarker, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
   import { rust } from "@codemirror/lang-rust";
@@ -77,7 +77,18 @@
   let view: EditorView | null = null;
   let themeCompartment = new Compartment();
 
-  const setHighlight = StateEffect.define<{ runningLine: number; awaitingLines: number[] }>();
+  // One-shot "about to run" blink timers + the previous frame's per-task state,
+  // used to detect the awaiting/blocking → ready (wait-completed) transition.
+  let blinkTimers = new Set<ReturnType<typeof setTimeout>>();
+  let prevTaskState = new Map<number, string>();
+
+  // Per-line task state drives the background colour so the editor matches the
+  // stage palette. One colour per line; precedence running > ready > blocking >
+  // awaiting (done is not highlighted).
+  type LineState = "running" | "ready" | "awaiting" | "blocking";
+  const RANK: Record<LineState, number> = { running: 0, ready: 1, blocking: 2, awaiting: 3 };
+
+  const setHighlight = StateEffect.define<{ runningLine: number; lineStates: Map<number, LineState> }>();
   const highlightField = StateField.define<DecorationSet>({
     create() { return Decoration.none; },
     update(deco, tr) {
@@ -87,16 +98,38 @@
           const builder: any[] = [];
           const doc = tr.state.doc;
           const safe = (n: number) => n >= 1 && n <= doc.lines;
-          if (safe(e.value.runningLine)) {
-            const line = doc.line(e.value.runningLine);
-            builder.push(Decoration.line({ class: "cm-run-line" }).range(line.from));
-          }
-          for (const ln of e.value.awaitingLines) {
-            if (!safe(ln)) continue;
-            const line = doc.line(ln);
-            builder.push(Decoration.line({ class: "cm-await-line" }).range(line.from));
+          const lines = [...e.value.lineStates.keys()].filter(safe).sort((a, b) => a - b);
+          for (const ln of lines) {
+            builder.push(Decoration.line({ class: `cm-st-${e.value.lineStates.get(ln)!}` }).range(doc.line(ln).from));
           }
           next = Decoration.set(builder, true);
+        }
+      }
+      return next;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  // The "about to run" blink is a one-shot overlay decoration, decoupled from
+  // the per-tick rebuild of highlightField so the 3-iteration CSS animation is
+  // never restarted while the task lingers in the ready queue.
+  const addBlink = StateEffect.define<number[]>();
+  const clearBlink = StateEffect.define<number[]>();
+  const blinkField = StateField.define<DecorationSet>({
+    create() { return Decoration.none; },
+    update(deco, tr) {
+      let next = deco.map(tr.changes);
+      const doc = tr.state.doc;
+      for (const e of tr.effects) {
+        if (e.is(addBlink)) {
+          const add = e.value
+            .filter((n) => n >= 1 && n <= doc.lines)
+            .map((n) => Decoration.line({ class: "cm-st-ready-blink" }).range(doc.line(n).from));
+          if (add.length) next = next.update({ add, sort: true });
+        }
+        if (e.is(clearBlink)) {
+          const drop = new Set(e.value.filter((n) => n >= 1 && n <= doc.lines).map((n) => doc.line(n).from));
+          next = next.update({ filter: (from) => !drop.has(from) });
         }
       }
       return next;
@@ -196,6 +229,7 @@
         lineNumbers(),
         runGutter,
         highlightActiveLine(),
+        drawSelection(),
         history(),
         rust(),
         syntaxHighlighting(tsHighlight, { fallback: true }),
@@ -206,6 +240,7 @@
         indentUnit.of("    "),
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         highlightField,
+        blinkField,
         errorLineField,
         runLineField,
         execBand,
@@ -231,23 +266,40 @@
     }
   });
 
-  // Highlight running / awaiting lines based on currentFrame
+  // Colour each active line by its task state (matching the stage palette) and
+  // blink lines whose task just finished waiting and is about to run.
   $effect(() => {
     if (!view) return;
     const frame = store.currentFrame;
     let runningLine = -1;
-    const awaitingLines: number[] = [];
+    const lineStates = new Map<number, LineState>();
+    const blinkLines: number[] = [];
+    const nextTaskState = new Map<number, string>();
     if (frame) {
       for (const t of frame.tasks.values()) {
-        if (t.state === "running" && t.currentLine > 0) {
-          if (runningLine < 0) runningLine = t.currentLine;
-        }
-        if ((t.state === "awaiting" || t.state === "blocking") && t.currentLine > 0) {
-          awaitingLines.push(t.currentLine);
+        nextTaskState.set(t.id, t.state);
+        if (t.state === "done" || t.currentLine <= 0) continue;
+        const st = t.state as LineState;
+        if (st === "running" && runningLine < 0) runningLine = t.currentLine;
+        const prev = lineStates.get(t.currentLine);
+        if (prev === undefined || RANK[st] < RANK[prev]) lineStates.set(t.currentLine, st);
+        // wait-completed → ready: only blink when the task was awaiting/blocking
+        // last frame (not a yield-induced ready, not a freshly spawned task).
+        if (st === "ready") {
+          const was = prevTaskState.get(t.id);
+          if (was === "awaiting" || was === "blocking") blinkLines.push(t.currentLine);
         }
       }
     }
-    view.dispatch({ effects: setHighlight.of({ runningLine, awaitingLines }) });
+    prevTaskState = nextTaskState;
+
+    const effects: StateEffect<any>[] = [setHighlight.of({ runningLine, lineStates })];
+    if (blinkLines.length) {
+      effects.push(addBlink.of(blinkLines));
+      const tid = setTimeout(() => view?.dispatch({ effects: clearBlink.of(blinkLines) }), 1400);
+      blinkTimers.add(tid);
+    }
+    view.dispatch({ effects });
   });
 
   // Theme follow
@@ -281,10 +333,11 @@
         position: "relative",          // positioning context for the exec band
       },
       ".cm-content": {
-        caretColor: "var(--ts-accent)",
         userSelect: "text",               // override body{user-select:none}
         WebkitUserSelect: "text",
       },
+      // drawSelection() renders its own caret; native one is hidden. Theme it.
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ts-accent)" },
       ".cm-gutters": {
         background: "var(--ts-bg-1)",
         color: "var(--ts-fg-3)",
@@ -294,17 +347,8 @@
       ".cm-activeLine": { background: dark ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.04)" },
       ".cm-activeLineGutter": { background: "transparent", color: "var(--ts-fg-2)" },
       ".cm-line": { transition: "background-color 120ms ease" },
-      // currently executing line — bold fill + a left accent bar. The bar uses an
-      // inset box-shadow (not border-left) so the code text doesn't shift.
-      ".cm-run-line": {
-        background: dark ? "rgba(204, 120, 50, 0.26)" : "rgba(219, 125, 0, 0.22)",
-        boxShadow: "inset 3px 0 0 var(--ts-st-running)",
-      },
-      // awaiting / blocking — a clearly-marked "paused" region in a cool hue
-      ".cm-await-line": {
-        background: dark ? "rgba(152, 118, 170, 0.24)" : "rgba(135, 16, 148, 0.16)",
-        boxShadow: "inset 3px 0 0 var(--ts-st-blocking)",
-      },
+      // per-state line fills (.cm-st-*) live in the <style> block so a single
+      // color-mix definition tracks the --ts-st-* vars across all themes.
       // ▶ execution arrow gutter (sits between line numbers and the code)
       ".cm-run-gutter": { width: "14px" },
       ".cm-run-gutter .cm-gutterElement": { padding: "0", textAlign: "center" },
@@ -365,7 +409,11 @@
     }, { dark });
   }
 
-  onDestroy(() => view?.destroy());
+  onDestroy(() => {
+    for (const tid of blinkTimers) clearTimeout(tid);
+    blinkTimers.clear();
+    view?.destroy();
+  });
 </script>
 
 <div id="editor-root" bind:this={root}></div>
@@ -377,4 +425,35 @@
     border-bottom: 1px solid var(--ts-line);
   }
   :global(.cm-editor.cm-focused) { outline: none; }
+
+  /* gentle "breathing" pulse on the active statement — the exec band tint and
+     the ▶ gutter arrow fade in sync so the eye is drawn to the running line
+     without the flicker being distracting. */
+  :global(.cm-exec-band) { animation: ts-exec-pulse 1.15s ease-in-out infinite; }
+  :global(.cm-run-arrow) { animation: ts-exec-pulse 1.15s ease-in-out infinite; }
+  @keyframes ts-exec-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cm-exec-band), :global(.cm-run-arrow) { animation: none; }
+  }
+
+  /* per-state line fills — one color-mix definition tracks the --ts-st-* vars
+     across dark / light / hc, so the editor matches the stage palette. */
+  :global(.cm-st-running)  { background: color-mix(in srgb, var(--ts-st-running) 24%, transparent);  box-shadow: inset 3px 0 0 var(--ts-st-running); }
+  :global(.cm-st-ready)    { background: color-mix(in srgb, var(--ts-st-ready) 20%, transparent);    box-shadow: inset 3px 0 0 var(--ts-st-ready); }
+  :global(.cm-st-awaiting) { background: color-mix(in srgb, var(--ts-st-awaiting) 20%, transparent); box-shadow: inset 3px 0 0 var(--ts-st-awaiting); }
+  :global(.cm-st-blocking) { background: color-mix(in srgb, var(--ts-st-blocking) 22%, transparent); box-shadow: inset 3px 0 0 var(--ts-st-blocking); }
+
+  /* "about to run" — a task whose wait just completed blinks 3× then settles
+     onto the static ready fill above. */
+  :global(.cm-st-ready-blink) { animation: ts-ready-blink 0.45s ease-in-out 3; }
+  @keyframes ts-ready-blink {
+    0%, 100% { background: color-mix(in srgb, var(--ts-st-ready) 20%, transparent); }
+    50%      { background: color-mix(in srgb, var(--ts-st-ready) 55%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.cm-st-ready-blink) { animation: none; }
+  }
 </style>
