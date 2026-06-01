@@ -108,6 +108,20 @@ fn current_id() -> u64 {
     CURRENT_TASK.try_with(|p| *p).unwrap_or(0)
 }
 
+/// Re-emit a `TaskPoll` when a task resumes execution after a suspension point.
+/// In real tokio every resume IS a poll; without this the engine only ever sees
+/// the task's first poll and leaves it stuck in `ready` for the rest of the run,
+/// so the worker cores look idle even while the task is actively running.
+fn repoll(id: u64, line: u32) {
+    let worker = (id as u32) % WORKER_COUNT.load(Ordering::SeqCst).max(1);
+    emit(&Event::TaskPoll {
+        tick: tick_now(),
+        id,
+        worker,
+        line,
+    });
+}
+
 fn alloc_blocking_slot() -> u32 {
     let mut g = BLOCKING.lock();
     let slots = g.as_mut().expect("blocking state");
@@ -289,6 +303,7 @@ pub async fn yield_now(line: u32) {
         id,
         cause: "yield",
     });
+    repoll(id, line);
 }
 
 pub async fn sleep(line: u32, dur: Duration) {
@@ -309,6 +324,7 @@ pub async fn sleep(line: u32, dur: Duration) {
         id,
         cause: "timer_fire",
     });
+    repoll(id, line);
 }
 
 pub async fn trace_await<F>(line: u32, fut: F) -> F::Output
@@ -328,6 +344,7 @@ where
         id,
         cause: "generic",
     });
+    repoll(id, line);
     r
 }
 
@@ -356,11 +373,12 @@ pub fn join_enter(line: u32) {
     });
 }
 
-pub fn join_exit(_line: u32) {
+pub fn join_exit(line: u32) {
     let id = current_id();
     emit(&Event::TaskWake {
         tick: tick_now(),
         id,
         cause: "child_done",
     });
+    repoll(id, line);
 }
