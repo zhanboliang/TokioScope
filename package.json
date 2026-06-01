@@ -14,5 +14,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@lezer/highlight": "1.2.3"
   }
 }
