@@ -11,7 +11,7 @@
   <!-- self-contained dark card so it reads on any README background -->
   <rect width="340" height="88" rx="18" fill="#1A1D22" />
   <!-- waveform glyph (the card itself is the "screen") -->
-  <g transform="translate(20,17) scale(0.78)">
+  <g transform="translate(7,3) scale(1.15)">
     <line x1="11" y1="46" x2="53" y2="46" stroke="#2E333B" stroke-width="1.7" stroke-linecap="round" />
     <path d="M11 40 H19 V25 H29 V40 H37 V25 H47 V40 H53"
           fill="none" stroke="#E0843A" stroke-width="4.4"
