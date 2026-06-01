@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { store } from "../store.svelte";
   import { readCssVar } from "../colors";
+  import { t as tr } from "../i18n.svelte"; // aliased — `t` is a local task var
 
   let canvas: HTMLCanvasElement;
   let body: HTMLDivElement;
@@ -122,11 +123,11 @@
 </script>
 
 <section class="mini">
-  <span class="label">map</span>
+  <span class="label">{tr("minimap.map")}</span>
   <div class="body" bind:this={body}>
     <canvas bind:this={canvas} onpointerdown={down} onpointermove={move} onpointerup={up}></canvas>
     {#if !store.sim || store.sim.frames.length === 0}
-      <span class="empty">尚无运行数据</span>
+      <span class="empty">{tr("minimap.noData")}</span>
     {/if}
   </div>
 </section>

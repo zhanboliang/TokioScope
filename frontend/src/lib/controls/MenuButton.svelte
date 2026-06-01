@@ -4,12 +4,24 @@
   import { store } from "../store.svelte";
   import { THEMES, applyTheme, type ThemeId } from "../theme";
   import { resetLayout } from "../prefs";
+  import { t, locale, setLocale, LANGS } from "../i18n.svelte";
 
   let open = $state(false);
   let showAbout = $state(false);
   let version = $state("0.1.0");
   let btn: HTMLButtonElement;
   let anchor = $state({ top: 34, right: 8 });
+
+  // hover-flyout submenus (theme / language)
+  let openSub = $state<null | "theme" | "lang">(null);
+  let subTimer: number | undefined;
+  function enterSub(k: "theme" | "lang") {
+    if (subTimer) clearTimeout(subTimer);
+    openSub = k;
+  }
+  function leaveSub() {
+    subTimer = window.setTimeout(() => (openSub = null), 120) as unknown as number;
+  }
 
   onMount(async () => {
     try { version = await getVersion(); } catch { /* web preview — keep default */ }
@@ -25,7 +37,7 @@
     if (open) place();
     else showAbout = false;
   }
-  function close() { open = false; showAbout = false; }
+  function close() { open = false; showAbout = false; openSub = null; }
 
   function pickTheme(id: ThemeId) { applyTheme(id); }
   function openShortcuts() { store.showShortcuts = true; close(); }
@@ -37,7 +49,7 @@
   class="kebab"
   class:active={open}
   onclick={toggle}
-  title="设置"
+  title={t("menu.settings")}
   aria-label="Settings"
   aria-haspopup="menu"
   aria-expanded={open}>
@@ -53,51 +65,86 @@
   <div class="popover" role="menu" tabindex="-1"
     style="top: {anchor.top}px; right: {anchor.right}px;">
 
-    <div class="sect">主题</div>
-    {#each THEMES as t (t.id)}
-      <button class="row" role="menuitemradio" aria-checked={store.theme === t.id}
-        onclick={() => pickTheme(t.id)}>
-        <span class="check">{store.theme === t.id ? "✓" : ""}</span>
-        <span class="lbl">{t.label}</span>
-      </button>
-    {/each}
+    <!-- theme (hover to expand) -->
+    <div class="sub-wrap" role="presentation"
+      onmouseenter={() => enterSub("theme")} onmouseleave={leaveSub}>
+      <div class="row sub-parent" class:open={openSub === "theme"}>
+        <span class="check"></span>
+        <span class="lbl">{t("menu.theme")}</span>
+        <span class="cur">{t(`theme.${store.theme}`)}</span>
+        <span class="chev">›</span>
+      </div>
+      {#if openSub === "theme"}
+        <div class="submenu" role="menu">
+          {#each THEMES as th (th.id)}
+            <button class="row" role="menuitemradio" aria-checked={store.theme === th.id}
+              onclick={() => pickTheme(th.id)}>
+              <span class="check">{store.theme === th.id ? "✓" : ""}</span>
+              <span class="lbl">{t(`theme.${th.id}`)}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- language (hover to expand) -->
+    <div class="sub-wrap" role="presentation"
+      onmouseenter={() => enterSub("lang")} onmouseleave={leaveSub}>
+      <div class="row sub-parent" class:open={openSub === "lang"}>
+        <span class="check"></span>
+        <span class="lbl">{t("menu.language")}</span>
+        <span class="cur">{LANGS.find((l) => l.id === locale())?.label}</span>
+        <span class="chev">›</span>
+      </div>
+      {#if openSub === "lang"}
+        <div class="submenu" role="menu">
+          {#each LANGS as l (l.id)}
+            <button class="row" role="menuitemradio" aria-checked={locale() === l.id}
+              onclick={() => setLocale(l.id)}>
+              <span class="check">{locale() === l.id ? "✓" : ""}</span>
+              <span class="lbl">{l.label}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
 
     <div class="div"></div>
-    <div class="sect">播放</div>
+    <div class="sect">{t("menu.playback")}</div>
     <button class="row" role="menuitemcheckbox" aria-checked={store.follow}
       onclick={() => (store.follow = !store.follow)}>
       <span class="check">{store.follow ? "✓" : ""}</span>
-      <span class="lbl">跟随播放头</span>
+      <span class="lbl">{t("menu.follow")}</span>
       <span class="hint">Follow</span>
     </button>
     <button class="row" role="menuitemcheckbox" aria-checked={store.loop_}
       onclick={() => (store.loop_ = !store.loop_)}>
       <span class="check">{store.loop_ ? "✓" : ""}</span>
-      <span class="lbl">循环播放</span>
+      <span class="lbl">{t("menu.loop")}</span>
       <span class="hint">Loop</span>
     </button>
 
     <div class="div"></div>
     <button class="row" role="menuitem" onclick={openShortcuts}>
       <span class="check"></span>
-      <span class="lbl">键盘快捷键</span>
+      <span class="lbl">{t("menu.shortcuts")}</span>
       <span class="hint">?</span>
     </button>
     <button class="row" role="menuitem" onclick={doReset}>
       <span class="check"></span>
-      <span class="lbl">重置布局</span>
+      <span class="lbl">{t("menu.reset")}</span>
     </button>
 
     <div class="div"></div>
     <button class="row" role="menuitem" aria-expanded={showAbout}
       onclick={() => (showAbout = !showAbout)}>
       <span class="check">{showAbout ? "▾" : "▸"}</span>
-      <span class="lbl">关于 TokioScope</span>
+      <span class="lbl">{t("menu.about")}</span>
     </button>
     {#if showAbout}
       <div class="about">
         <div class="about-name">TokioScope <span class="about-ver">v{version}</span></div>
-        <div class="about-blurb">See how Tokio schedules your async code, tick by tick.</div>
+        <div class="about-blurb">{t("about.tagline")}</div>
       </div>
     {/if}
   </div>
@@ -184,6 +231,25 @@
     color: var(--ts-fg-3);
   }
   .row[aria-checked="true"] .lbl { color: var(--ts-fg); }
+
+  /* collapsible theme/language → hover-flyout submenu */
+  .sub-wrap { position: relative; }
+  .sub-parent { cursor: default; }
+  .sub-parent:hover, .sub-parent.open { background: var(--ts-bg-3); }
+  .sub-parent .cur { flex: 0 0 auto; color: var(--ts-fg-3); font-size: 11px; }
+  .sub-parent .chev { flex: 0 0 auto; margin-left: 6px; color: var(--ts-fg-3); }
+  .submenu {
+    position: absolute;
+    right: calc(100% + 4px);
+    top: -5px;
+    min-width: 152px;
+    padding: 5px;
+    background: var(--ts-bg-1);
+    border: 1px solid var(--ts-line-2);
+    border-radius: 7px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    z-index: 92;
+  }
 
   .about {
     padding: 6px 10px 8px 32px;

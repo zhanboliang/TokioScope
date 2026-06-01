@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "../store.svelte";
+  import { t } from "../i18n.svelte";
 
   function step(d: number) {
     if (!store.totalTicks) return;
@@ -11,7 +12,7 @@
 <section class="bar">
   <!-- to start -->
   <button class="ctrl" onclick={() => { store.playhead = 0; store.playing = false; }}
-    title="回到开始 (Home)" aria-label="To start">
+    title={t("pb.toStart")} aria-label="To start">
     <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
       <rect x="3" y="3.5" width="1.7" height="9" rx="0.6" />
       <path d="M13 3.5 L6.2 8 L13 12.5 Z" />
@@ -19,7 +20,7 @@
   </button>
 
   <!-- step back (reverse step-over) -->
-  <button class="ctrl" onclick={() => step(-1)} title="上一步 (←)" aria-label="Step back">
+  <button class="ctrl" onclick={() => step(-1)} title={t("pb.stepBack")} aria-label="Step back">
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
       <path d="M13 9 C 13 4.6 3 4.6 3 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       <path d="M3 11 L1.4 8 L4.6 8 Z" fill="currentColor" />
@@ -29,7 +30,7 @@
 
   <!-- resume / pause -->
   <button class="ctrl play" onclick={() => store.playing = !store.playing}
-    title="播放 / 暂停 (Space)" aria-label="Play / Pause">
+    title={t("pb.playPause")} aria-label="Play / Pause">
     {#if store.playing}
       <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
         <rect x="4" y="3.2" width="3" height="9.6" rx="0.6" />
@@ -43,7 +44,7 @@
   </button>
 
   <!-- step forward (step over) -->
-  <button class="ctrl" onclick={() => step(1)} title="下一步 (→)" aria-label="Step over">
+  <button class="ctrl" onclick={() => step(1)} title={t("pb.stepFwd")} aria-label="Step over">
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
       <path d="M3 9 C 3 4.6 13 4.6 13 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       <path d="M13 11 L11.4 8 L14.6 8 Z" fill="currentColor" />
@@ -53,7 +54,7 @@
 
   <!-- to end -->
   <button class="ctrl" onclick={() => { store.playhead = Math.max(0, store.totalTicks - 1); store.playing = false; }}
-    title="跳到结束 (End)" aria-label="To end">
+    title={t("pb.toEnd")} aria-label="To end">
     <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
       <path d="M3 3.5 L9.8 8 L3 12.5 Z" />
       <rect x="11.3" y="3.5" width="1.7" height="9" rx="0.6" />
@@ -64,7 +65,7 @@
 
   <!-- restart -->
   <button class="ctrl" onclick={() => { store.playhead = 0; store.playing = false; }}
-    title="重置 (R)" aria-label="Restart">
+    title={t("pb.restart")} aria-label="Restart">
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
       <path d="M8 3.4 A4.6 4.6 0 1 0 12.4 6" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
       <path d="M8 1 L8 5.6 L5.2 3.3 Z" fill="currentColor" />
@@ -72,18 +73,18 @@
   </button>
 
   <label class="speed">
-    <span>speed</span>
+    <span>{t("pb.speed")}</span>
     <input type="range" min="0.1" max="20" step="0.1" bind:value={store.speed} />
     <output>{store.speed.toFixed(1)}×</output>
   </label>
 
   <label class="toggle">
     <input type="checkbox" bind:checked={store.loop_} />
-    <span>loop</span>
+    <span>{t("pb.loop")}</span>
   </label>
   <label class="toggle">
     <input type="checkbox" bind:checked={store.follow} />
-    <span>follow</span>
+    <span>{t("pb.follow")}</span>
   </label>
 </section>
 

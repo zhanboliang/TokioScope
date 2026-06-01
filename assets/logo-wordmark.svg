@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 88" width="340" height="88" role="img" aria-label="tokioscope">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 88" width="340" height="88" role="img" aria-label="TokioScope">
   <defs>
     <filter id="ts-glow" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="1.6" result="b" />
@@ -19,6 +19,6 @@
   </g>
   <text x="96" y="56" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, monospace"
         font-size="34" font-weight="600" letter-spacing="-1.5">
-    <tspan fill="#C9D3DF">tokio</tspan><tspan fill="#E0843A">scope</tspan>
+    <tspan fill="#C9D3DF">Tokio</tspan><tspan fill="#E0843A">Scope</tspan>
   </text>
 </svg>

@@ -1,45 +1,49 @@
 import { store } from "./store.svelte";
 import { ipc } from "./ipc";
+import { t } from "./i18n.svelte";
 
 export interface ShortcutGroup {
   group: string;
   items: { keys: string; action: string }[];
 }
 
-export const SHORTCUTS: ShortcutGroup[] = [
-  {
-    group: "播放控制",
-    items: [
-      { keys: "Space", action: "播放 / 暂停" },
-      { keys: "→ / ←", action: "单步前进 / 后退（一帧）" },
-      { keys: "Shift + → / ←", action: "精细移动播放头" },
-      { keys: "R", action: "重置(回到 tick 0)" },
-      { keys: "Home / End", action: "跳到开始 / 结束" },
-      { keys: "L", action: "切换循环播放" },
-    ],
-  },
-  {
-    group: "时间线",
-    items: [
-      { keys: "+ / -", action: "缩放" },
-      { keys: "Ctrl + 滚轮", action: "鼠标锚点缩放" },
-      { keys: "Shift + 拖拽", action: "平移" },
-      { keys: "中键拖拽", action: "平移" },
-      { keys: "双击", action: "自适应" },
-      { keys: "F", action: "跟随播放头" },
-    ],
-  },
-  {
-    group: "代码 & 运行",
-    items: [
-      { keys: "⌘/Ctrl + Enter", action: "运行" },
-      { keys: "⌘/Ctrl + .", action: "取消运行" },
-      { keys: "⌘/Ctrl + E", action: "切换行内编辑模式" },
-      { keys: "⌘/Ctrl + 1/2/3", action: "加载示例 1 / 2 / 3" },
-      { keys: "?", action: "切换快捷键速查表" },
-    ],
-  },
-];
+/** Localized shortcut reference (reactive: reads t() / locale()). */
+export function getShortcuts(): ShortcutGroup[] {
+  return [
+    {
+      group: t("sc.group.playback"),
+      items: [
+        { keys: "Space", action: t("sc.playPause") },
+        { keys: "→ / ←", action: t("sc.step") },
+        { keys: "Shift + → / ←", action: t("sc.fine") },
+        { keys: "R", action: t("sc.reset") },
+        { keys: "Home / End", action: t("sc.homeEnd") },
+        { keys: "L", action: t("sc.toggleLoop") },
+      ],
+    },
+    {
+      group: t("sc.group.timeline"),
+      items: [
+        { keys: "+ / -", action: t("sc.zoom") },
+        { keys: t("key.wheel"), action: t("sc.zoomAnchor") },
+        { keys: t("key.shiftDrag"), action: t("sc.pan") },
+        { keys: t("key.midDrag"), action: t("sc.pan") },
+        { keys: t("key.dblClick"), action: t("sc.fit") },
+        { keys: "F", action: t("sc.follow") },
+      ],
+    },
+    {
+      group: t("sc.group.code"),
+      items: [
+        { keys: "⌘/Ctrl + Enter", action: t("sc.run") },
+        { keys: "⌘/Ctrl + .", action: t("sc.cancel") },
+        { keys: "⌘/Ctrl + E", action: t("sc.inline") },
+        { keys: "⌘/Ctrl + 1/2/3", action: t("sc.examples") },
+        { keys: "?", action: t("sc.help") },
+      ],
+    },
+  ];
+}
 
 export function bindGlobal(loadExample: (idx: number) => void) {
   const handler = (e: KeyboardEvent) => {

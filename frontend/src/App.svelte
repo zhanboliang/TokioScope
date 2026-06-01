@@ -4,6 +4,7 @@
   import { store } from "./lib/store.svelte";
   import { bindGlobal } from "./lib/shortcuts";
   import { initPrefs, persistPrefs } from "./lib/prefs";
+  import { t, locale } from "./lib/i18n.svelte";
   import CodeEditor from "./lib/editor/CodeEditor.svelte";
   import Timeline from "./lib/timeline/Timeline.svelte";
   import Minimap from "./lib/timeline/Minimap.svelte";
@@ -95,7 +96,7 @@
   $effect(() => {
     void store.theme; void store.codePaneWidth; void store.outputHeight;
     void store.timelineHeight; void store.zoom; void store.speed;
-    void store.loop_; void store.follow;
+    void store.loop_; void store.follow; void locale();
     persistPrefs();
   });
 
@@ -139,7 +140,7 @@
       {#if !store.status.running}
         <!-- idle: filled play triangle (IDEA "Run") -->
         <button class="icon-btn run-idle" onclick={runCode}
-          title="运行 (⌘+Enter)" aria-label="Run">
+          title={t("run.title")} aria-label="Run">
           <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"
             fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
             <path d="M5 3.2 L12.5 8 L5 12.8 Z"/>
@@ -148,7 +149,7 @@
       {:else}
         <!-- running: filled play in rounded chip (IDEA "Rerun") -->
         <button class="icon-btn rerun" onclick={runCode}
-          title="重新运行 (⌘+Enter)" aria-label="Rerun">
+          title={t("rerun.title")} aria-label="Rerun">
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"
             fill="currentColor">
             <path d="M5 3.2 L12.5 8 L5 12.8 Z"/>
@@ -156,7 +157,7 @@
         </button>
         <!-- red stop square (IDEA "Stop") -->
         <button class="icon-btn stop" onclick={() => ipc.cancelRun()}
-          title="取消 (⌘+.)" aria-label="Stop">
+          title={t("stop.title")} aria-label="Stop">
           <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
             fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
         </button>
@@ -169,7 +170,7 @@
   <div class="shell">
   <aside class="code-pane" style="width: {store.codePaneWidth}px">
     <div class="pane-head">
-      <span class="title">source</span>
+      <span class="title">{t("pane.source")}</span>
     </div>
 
     <div class="editor-slot">

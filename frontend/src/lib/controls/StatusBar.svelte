@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "../store.svelte";
+  import { t } from "../i18n.svelte";
 
   const f = $derived(store.currentFrame);
   const flavor = $derived(store.sim?.flavor ?? store.analysis?.runtime.flavor ?? "—");
@@ -20,15 +21,15 @@
   <span class="stat flavor">flavor <b>{flavor}</b></span>
 
   {#if store.status.building}
-    <span class="indicator building">building runner crate…</span>
+    <span class="indicator building">{t("status.building")}</span>
   {:else if store.status.last_error}
-    <span class="indicator err" title={store.status.last_error}>runner error</span>
+    <span class="indicator err" title={store.status.last_error}>{t("status.error")}</span>
   {:else if store.status.running}
-    <span class="indicator run">running</span>
+    <span class="indicator run">{t("status.running")}</span>
   {:else if store.status.ready}
-    <span class="indicator ok">ready</span>
+    <span class="indicator ok">{t("status.ready")}</span>
   {:else}
-    <span class="indicator wait">init…</span>
+    <span class="indicator wait">{t("status.init")}</span>
   {/if}
 
   <span class="spacer"></span>

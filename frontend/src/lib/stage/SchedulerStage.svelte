@@ -4,6 +4,7 @@
   import { store } from "../store.svelte";
   import { STATE_COLOR } from "../colors";
   import type { TaskSnapshot } from "../engine";
+  import { t as tr } from "../i18n.svelte"; // aliased — `t` is the task var in {#each}
 
   const frame = $derived(store.currentFrame);
   const tasks = $derived(frame?.tasks);
@@ -34,10 +35,10 @@
   const FLIP = { duration: 240 };
 
   function awaitTag(reason?: string): string {
-    return reason === "timer" ? "⏱ 计时器"
-      : reason === "children" ? "⏳ 子任务"
-      : reason === "blocking" ? "🧵 阻塞"
-      : "… 挂起";
+    return reason === "timer" ? tr("await.timer")
+      : reason === "children" ? tr("await.children")
+      : reason === "blocking" ? tr("await.blocking")
+      : tr("await.generic");
   }
 </script>
 
@@ -53,20 +54,20 @@
   <div class="lanes">
     <!-- ready queue -->
     <div class="zone ready">
-      <header>就绪队列 · {ready.length}</header>
+      <header>{tr("zone.ready")} · {ready.length}</header>
       <div class="list">
         {#each readyTasks as t (t.id)}
           <div class="row" in:receive={{ key: t.id }} out:send={{ key: t.id }} animate:flip={FLIP}>
             {@render chip(t)}
           </div>
         {/each}
-        {#if readyTasks.length === 0}<div class="empty">空</div>{/if}
+        {#if readyTasks.length === 0}<div class="empty">{tr("stage.empty")}</div>{/if}
       </div>
     </div>
 
     <!-- CPU cores -->
     <div class="zone cpu">
-      <header>CPU · {cores.length} 核</header>
+      <header>{tr("zone.cpu", { n: cores.length })}</header>
       <div class="cores">
         {#each cores as id, i (i)}
           <div class="core" class:busy={id != null}>
@@ -81,7 +82,7 @@
                 {/each}
               {/if}
             {:else}
-              <span class="idle">空闲</span>
+              <span class="idle">{tr("stage.idle")}</span>
             {/if}
           </div>
         {/each}
@@ -90,7 +91,7 @@
 
     <!-- await / timer -->
     <div class="zone awaitz">
-      <header>等待 / 计时 · {awaiting.length}</header>
+      <header>{tr("zone.await")} · {awaiting.length}</header>
       <div class="list">
         {#each awaiting as t (t.id)}
           <div class="row awaitrow" in:receive={{ key: t.id }} out:send={{ key: t.id }} animate:flip={FLIP}>
@@ -98,14 +99,14 @@
             {@render chip(t)}
           </div>
         {/each}
-        {#if awaiting.length === 0}<div class="empty">空</div>{/if}
+        {#if awaiting.length === 0}<div class="empty">{tr("stage.empty")}</div>{/if}
       </div>
     </div>
   </div>
 
   <!-- blocking pool -->
   <div class="blocking">
-    <span class="bl-label">阻塞池</span>
+    <span class="bl-label">{tr("zone.blocking")}</span>
     <div class="bslots">
       {#each slots as s, i}
         {@const bt = s.taskId != null ? task(s.taskId) : null}
@@ -126,12 +127,12 @@
   <!-- done tray -->
   {#if done.length}
     <div class="done-tray">
-      <span class="dt-label">已完成 · {done.length}</span>
+      <span class="dt-label">{tr("zone.done")} · {done.length}</span>
       {#each done as t (t.id)}
         <div
           class="done-item"
           class:just={t.doneTick === tick}
-          title={`${t.name}：第 ${t.bornTick} → ${t.doneTick} tick，存活 ${t.durationTicks} ticks`}
+          title={tr("done.tooltip", { name: t.name, born: t.bornTick, done: t.doneTick ?? 0, life: t.durationTicks })}
           in:receive={{ key: t.id }}
           out:send={{ key: t.id }}
           animate:flip={FLIP}

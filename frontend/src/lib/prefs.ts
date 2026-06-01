@@ -1,5 +1,6 @@
 import { Store as PluginStore } from "@tauri-apps/plugin-store";
 import { store } from "./store.svelte";
+import { locale, setLocale } from "./i18n.svelte";
 
 let backing: PluginStore | null = null;
 
@@ -23,6 +24,9 @@ export async function initPrefs() {
   store.speed = (await backing.get<number>("speed")) ?? DEFAULTS.speed;
   store.loop_ = (await backing.get<boolean>("loop")) ?? DEFAULTS.loop;
   store.follow = (await backing.get<boolean>("follow")) ?? DEFAULTS.follow;
+
+  const savedLang = await backing.get<string>("lang");
+  if (savedLang === "zh" || savedLang === "en") setLocale(savedLang);
 
   document.documentElement.dataset.theme = store.theme;
 }
@@ -53,6 +57,7 @@ export function persistPrefs() {
     await backing.set("speed", store.speed);
     await backing.set("loop", store.loop_);
     await backing.set("follow", store.follow);
+    await backing.set("lang", locale());
     await backing.save();
   }, 300) as unknown as number;
 }

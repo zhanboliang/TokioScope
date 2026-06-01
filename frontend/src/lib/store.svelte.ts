@@ -1,25 +1,14 @@
 import { Aggregator, type Frame, type SimResult } from "./engine";
 import type { ParseReport, RunnerEvent, RunnerStatus } from "./ipc";
+import { t } from "./i18n.svelte";
 
 // Bound runaway programs (e.g. infinite loops) so the UI stays responsive.
 const MAX_FRAMES = 1500;   // tick-frames kept; once hit, collection stops + run is cancelled
 const MAX_OUTPUT = 1000;   // stdout / stderr scrollback lines
 
-const DEFAULT_CODE = `use std::time::Duration;
-
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
-    println!("hello tokioscope");
-    let h = tokio::spawn(async {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        println!("inner");
-    });
-    let _ = h.await;
-}
-`;
-
 class Store {
-  code = $state(DEFAULT_CODE);
+  // Editor starts empty — the user writes (or loads an example with ⌘/Ctrl+1/2/3).
+  code = $state("");
   analysis = $state<ParseReport | null>(null);
   status = $state<RunnerStatus>({
     ready: false,
@@ -115,7 +104,7 @@ class Store {
           this.capped = true;
           justCapped = true;
           this.#pendEv = [];
-          this.#append(this.rawStderr, [`⚠ 已达可视化上限 ${MAX_FRAMES} 帧，停止采集并自动终止运行`], (v) => (this.rawStderr = v));
+          this.#append(this.rawStderr, [t("cap.notice", { n: MAX_FRAMES })], (v) => (this.rawStderr = v));
           break;
         }
       }

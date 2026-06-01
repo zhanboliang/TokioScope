@@ -1,7 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import { SHORTCUTS } from "../shortcuts";
+  import { getShortcuts } from "../shortcuts";
+  import { t } from "../i18n.svelte";
   const dispatch = createEventDispatcher();
+  const groups = $derived(getShortcuts());
 </script>
 
 <div class="backdrop" onclick={() => dispatch("close")}
@@ -11,11 +13,11 @@
     onkeydown={(e) => e.stopPropagation()}
     role="dialog" aria-modal="true" tabindex="-1">
     <header>
-      <h2>快捷键</h2>
+      <h2>{t("sc.title")}</h2>
       <button onclick={() => dispatch("close")}>×</button>
     </header>
     <div class="grid">
-      {#each SHORTCUTS as g}
+      {#each groups as g}
         <section>
           <h3>{g.group}</h3>
           <dl>
@@ -27,7 +29,7 @@
         </section>
       {/each}
     </div>
-    <footer><kbd>?</kbd> 切换此面板 · <kbd>Esc</kbd> 关闭</footer>
+    <footer><kbd>?</kbd> {t("sc.footer")}</footer>
   </div>
 </div>
 

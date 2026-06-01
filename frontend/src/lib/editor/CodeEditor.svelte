@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import { EditorState, Compartment, RangeSet } from "@codemirror/state";
-  import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, gutters, gutter, GutterMarker, ViewPlugin, type ViewUpdate, type DecorationSet } from "@codemirror/view";
+  import { EditorView, keymap, lineNumbers, highlightActiveLine, Decoration, gutters, gutter, GutterMarker, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
   import { rust } from "@codemirror/lang-rust";
@@ -10,6 +10,7 @@
   import { autocompletion, completionKeymap, snippetCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
   import { linter, lintGutter, forceLinting, type Diagnostic } from "@codemirror/lint";
   import { store } from "../store.svelte";
+  import { t as tr } from "../i18n.svelte"; // aliased — `t` is the lezer tags import
 
   // Syntax theme mapped to the IDEA-Darcula design tokens. Colours are CSS vars,
   // so the highlight follows the active theme (dark / light / hc) automatically.
@@ -198,6 +199,7 @@
         history(),
         rust(),
         syntaxHighlighting(tsHighlight, { fallback: true }),
+        placeholder(tr("editor.placeholder")),
         autocompletion({ override: [rustComplete] }),
         linter(lintFromAnalysis, { delay: 200 }),
         lintGutter(),

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store } from "../store.svelte";
+  import { t } from "../i18n.svelte";
 
   type Row = { tick: number; source: "println" | "stdout" | "stderr"; text: string; line?: number };
 
@@ -20,7 +21,7 @@
 </script>
 
 <section class="panel">
-  <header>OUTPUT · {rows.length}</header>
+  <header>{t("output.header")} · {rows.length}</header>
   <div class="body">
     {#each rows as r}
       <div class="row {r.source}">
@@ -30,7 +31,7 @@
       </div>
     {/each}
     {#if rows.length === 0}
-      <div class="empty">(println! / stdout 在此显示)</div>
+      <div class="empty">{t("output.empty")}</div>
     {/if}
   </div>
 </section>

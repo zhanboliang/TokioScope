@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "../store.svelte";
-  import { readCssVar, STATE_COLOR, STATE_LABEL_ZH, STATE_DESC_ZH } from "../colors";
+  import { readCssVar, STATE_COLOR } from "../colors";
+  import { t as tr, locale } from "../i18n.svelte"; // aliased — `t` is a local task var
   import type { TaskState } from "../engine";
 
   let canvas: HTMLCanvasElement;
@@ -55,7 +56,7 @@
     if (!sim) {
       ctx.fillStyle = readCssVar("--ts-fg-3") || "#606366";
       ctx.font = `12px ${getMono()}`;
-      ctx.fillText("waiting for run…", 12, 20);
+      ctx.fillText(tr("tl.waiting"), 12, 20);
       return;
     }
 
@@ -289,6 +290,7 @@
     void store.panTick;
     void store.theme;
     void store.timelineHeight;
+    void locale();
     draw();
   });
 </script>
@@ -309,14 +311,14 @@
     onmouseleave={() => (legendHover = false)}
     role="presentation">
     <button class="legend-toggle" class:on={legendPinned}
-      onclick={() => (legendPinned = !legendPinned)} aria-label="颜色图例">?</button>
+      onclick={() => (legendPinned = !legendPinned)} aria-label={tr("tl.legend")}>?</button>
     {#if legendHover || legendPinned}
       <div class="legend">
         {#each LEGEND as s}
           <div class="row">
             <span class="sw" style="background: {STATE_COLOR[s]}"></span>
-            <span class="lab">{STATE_LABEL_ZH[s]}</span>
-            <span class="desc">{STATE_DESC_ZH[s]}</span>
+            <span class="lab">{tr(`state.${s}`)}</span>
+            <span class="desc">{tr(`state.${s}.desc`)}</span>
           </div>
         {/each}
       </div>
