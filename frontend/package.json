@@ -13,18 +13,20 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.2",
+    "@codemirror/commands": "^6.6.0",
+    "@codemirror/lang-rust": "^6.0.1",
+    "@codemirror/language": "^6.10.2",
+    "@codemirror/lint": "^6.9.6",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.28.0",
+    "@fontsource/ibm-plex-sans": "^5.0.0",
+    "@fontsource/jetbrains-mono": "^5.0.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-os": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
-    "@tauri-apps/plugin-store": "^2.0.0",
-    "@codemirror/commands": "^6.6.0",
-    "@codemirror/lang-rust": "^6.0.1",
-    "@codemirror/language": "^6.10.2",
-    "@codemirror/state": "^6.4.1",
-    "@codemirror/view": "^6.28.0",
-    "@fontsource/ibm-plex-sans": "^5.0.0",
-    "@fontsource/jetbrains-mono": "^5.0.0"
+    "@tauri-apps/plugin-store": "^2.0.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

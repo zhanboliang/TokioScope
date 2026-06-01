@@ -7,6 +7,8 @@
   import { rust } from "@codemirror/lang-rust";
   import { tags as t } from "@lezer/highlight";
   import { StateField, StateEffect } from "@codemirror/state";
+  import { autocompletion, completionKeymap, snippetCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+  import { linter, lintGutter, forceLinting, type Diagnostic } from "@codemirror/lint";
   import { store } from "../store.svelte";
 
   // Syntax theme mapped to the IDEA-Darcula design tokens. Colours are CSS vars,
@@ -24,6 +26,50 @@
     { tag: [t.meta, t.annotation], color: "var(--ts-fg-3)" },
     { tag: t.invalid, color: "var(--ts-error)" },
   ]);
+
+  // ── Lightweight completion: Rust keywords + common tokio snippets ──────────
+  const RUST_KEYWORDS = [
+    "async", "await", "fn", "let", "mut", "move", "match", "if", "else", "for",
+    "while", "loop", "impl", "struct", "enum", "trait", "pub", "use", "mod",
+    "return", "ref", "as", "dyn", "const", "static", "where", "Some", "None",
+    "Ok", "Err", "Result", "Option", "Vec", "String", "Box",
+  ];
+  const keywordOptions = RUST_KEYWORDS.map((label) => ({ label, type: "keyword" }));
+  const tokioSnippets = [
+    snippetCompletion("tokio::spawn(async move {\n    ${}\n});", { label: "tokio::spawn", type: "function", detail: "spawn a task" }),
+    snippetCompletion("tokio::time::sleep(std::time::Duration::from_millis(${ms})).await;", { label: "tokio::time::sleep", type: "function", detail: "async sleep" }),
+    snippetCompletion("tokio::task::spawn_blocking(move || {\n    ${}\n});", { label: "tokio::task::spawn_blocking", type: "function", detail: "blocking task" }),
+    snippetCompletion("tokio::task::yield_now().await;", { label: "tokio::task::yield_now", type: "function" }),
+    snippetCompletion("tokio::join!(${})", { label: "tokio::join!", type: "function" }),
+    snippetCompletion("#[tokio::main(flavor = \"multi_thread\", worker_threads = ${4})]", { label: "tokio::main", type: "keyword", detail: "runtime entry" }),
+    snippetCompletion("println!(\"${}\");", { label: "println!", type: "function" }),
+  ];
+  function rustComplete(ctx: CompletionContext): CompletionResult | null {
+    const word = ctx.matchBefore(/[\w:!]+/);
+    if (!word || (word.from === word.to && !ctx.explicit)) return null;
+    return { from: word.from, options: [...keywordOptions, ...tokioSnippets], validFor: /^[\w:!]*$/ };
+  }
+
+  // ── Diagnostics: surface the existing `syn` analysis (store.analysis) as
+  //    inline squiggles. col is 0-based, line is 1-based (see parser.rs). ──────
+  function lintFromAnalysis(view: EditorView): Diagnostic[] {
+    const report = store.analysis;
+    if (!report?.diagnostics) return [];
+    const doc = view.state.doc;
+    const out: Diagnostic[] = [];
+    for (const d of report.diagnostics) {
+      if (d.line < 1 || d.line > doc.lines) continue;
+      const line = doc.line(d.line);
+      const from = Math.min(line.to, line.from + Math.max(0, d.col));
+      out.push({
+        from,
+        to: line.to,
+        severity: d.level === "error" ? "error" : d.level === "warning" ? "warning" : "info",
+        message: d.message,
+      });
+    }
+    return out;
+  }
 
   const dispatch = createEventDispatcher();
   let root: HTMLDivElement;
@@ -50,6 +96,27 @@
             builder.push(Decoration.line({ class: "cm-await-line" }).range(line.from));
           }
           next = Decoration.set(builder, true);
+        }
+      }
+      return next;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  // Error lines (from the syn analysis) get a full-line tint so the mistake is
+  // obvious — not just a lone gutter dot.
+  const setErrorLines = StateEffect.define<number[]>();
+  const errorLineField = StateField.define<DecorationSet>({
+    create() { return Decoration.none; },
+    update(deco, tr) {
+      let next = deco.map(tr.changes);
+      for (const e of tr.effects) {
+        if (e.is(setErrorLines)) {
+          const doc = tr.state.doc;
+          const b = e.value
+            .filter((n) => n >= 1 && n <= doc.lines)
+            .map((n) => Decoration.line({ class: "cm-error-line" }).range(doc.line(n).from));
+          next = Decoration.set(b, true);
         }
       }
       return next;
@@ -131,9 +198,13 @@
         history(),
         rust(),
         syntaxHighlighting(tsHighlight, { fallback: true }),
+        autocompletion({ override: [rustComplete] }),
+        linter(lintFromAnalysis, { delay: 200 }),
+        lintGutter(),
         indentUnit.of("    "),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         highlightField,
+        errorLineField,
         runLineField,
         execBand,
         themeCompartment.of(editorTheme()),
@@ -181,6 +252,15 @@
   $effect(() => {
     void store.theme;
     view?.dispatch({ effects: themeCompartment.reconfigure(editorTheme()) });
+  });
+
+  // Re-run diagnostics + mark error lines whenever the syn analysis updates.
+  $effect(() => {
+    const report = store.analysis;
+    if (!view) return;
+    forceLinting(view);
+    const lines = report?.diagnostics?.filter((d) => d.level === "error").map((d) => d.line) ?? [];
+    view.dispatch({ effects: setErrorLines.of(lines) });
   });
 
   function editorTheme() {
@@ -238,6 +318,46 @@
         transition: "transform 140ms cubic-bezier(0.2, 0.7, 0.2, 1), height 140ms ease",
         willChange: "transform",
       },
+      // autocomplete popup — match the theme (CM default is a light box)
+      ".cm-tooltip.cm-tooltip-autocomplete": {
+        background: "var(--ts-bg-1)",
+        border: "1px solid var(--ts-line-2)",
+        borderRadius: "6px",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+      },
+      ".cm-tooltip-autocomplete > ul > li": {
+        fontFamily: "var(--ts-mono)",
+        fontSize: "12px",
+        color: "var(--ts-fg-2)",
+        padding: "2px 8px",
+      },
+      ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+        background: "var(--ts-bg-3)",
+        color: "var(--ts-fg)",
+      },
+      ".cm-completionIcon": { color: "var(--ts-fg-3)" },
+      ".cm-completionDetail": { color: "var(--ts-fg-3)", fontStyle: "normal" },
+      // lint diagnostics tooltip
+      ".cm-tooltip.cm-tooltip-lint": {
+        background: "var(--ts-bg-1)",
+        border: "1px solid var(--ts-line-2)",
+        borderRadius: "6px",
+      },
+      ".cm-diagnostic": {
+        fontFamily: "var(--ts-sans)",
+        fontSize: "12px",
+        color: "var(--ts-fg)",
+        padding: "4px 8px",
+      },
+      ".cm-diagnostic-error": { borderLeftColor: "var(--ts-error)" },
+      // full-line error highlight (faint red + left bar, like the run/await lines)
+      ".cm-error-line": {
+        background: dark ? "rgba(188, 63, 60, 0.13)" : "rgba(199, 34, 45, 0.09)",
+        boxShadow: "inset 3px 0 0 var(--ts-error)",
+      },
+      // soften / theme the lint gutter marker + the wavy underline
+      ".cm-lint-marker-error": { color: "var(--ts-error)", opacity: "0.9" },
+      ".cm-lintRange-error": { backgroundImage: "none", textDecoration: "underline wavy var(--ts-error)" },
       // (scrollbar visuals live in globals.css so the WKWebView `-webkit-appearance: none`
       //  switch applies; setting it inside EditorView.theme didn't override overlay style.)
     }, { dark });

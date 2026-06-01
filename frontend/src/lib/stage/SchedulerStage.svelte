@@ -126,10 +126,18 @@
   <!-- done tray -->
   {#if done.length}
     <div class="done-tray">
-      <span class="dt-label">已完成</span>
+      <span class="dt-label">已完成 · {done.length}</span>
       {#each done as t (t.id)}
-        <div class="row" in:receive={{ key: t.id }} out:send={{ key: t.id }} animate:flip={FLIP}>
+        <div
+          class="done-item"
+          class:just={t.doneTick === tick}
+          title={`${t.name}：第 ${t.bornTick} → ${t.doneTick} tick，存活 ${t.durationTicks} ticks`}
+          in:receive={{ key: t.id }}
+          out:send={{ key: t.id }}
+          animate:flip={FLIP}
+        >
           {@render chip(t)}
+          <span class="life">⏳ {t.durationTicks}t</span>
         </div>
       {/each}
     </div>
@@ -284,5 +292,21 @@
     overflow-x: auto;
   }
   .done-tray .dt-label { font-family: var(--ts-mono); font-size: 10px; color: var(--ts-fg-2); flex-shrink: 0; }
-  .done-tray .chip { opacity: 0.6; }
+  .done-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 4px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .done-item .chip { opacity: 0.7; }
+  .done-item .life { font-family: var(--ts-mono); font-size: 9.5px; color: var(--ts-fg-3); white-space: nowrap; }
+  /* the task that finished on this exact tick — flag it so "task ended" is obvious */
+  .done-item.just .chip { opacity: 1; }
+  .done-item.just .life { color: var(--ts-st-done); }
+  .done-item.just {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ts-st-done) 55%, transparent),
+                0 0 12px color-mix(in srgb, var(--ts-st-done) 30%, transparent);
+  }
 </style>
