@@ -61,6 +61,12 @@ export function bindGlobal(loadExample: (idx: number) => void) {
         ipc.cancelRun();
         return;
       }
+      // allow ⌘/Ctrl+1/2/3 to load examples even while editing
+      if ((e.metaKey || e.ctrlKey) && (e.key === "1" || e.key === "2" || e.key === "3")) {
+        e.preventDefault();
+        loadExample(parseInt(e.key) - 1);
+        return;
+      }
       return;
     }
 
