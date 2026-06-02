@@ -7,17 +7,26 @@
         <feMergeNode in="SourceGraphic" />
       </feMerge>
     </filter>
+    <!-- "Tokio" + the glyph baseline follow the viewer's light/dark theme so the
+         mark reads on any README background. "Scope" + the waveform stay orange. -->
+    <style>
+      .wordmark { fill: #1A1D22; }
+      .baseline { stroke: #C7CDD6; }
+      @media (prefers-color-scheme: dark) {
+        .wordmark { fill: #C9D3DF; }
+        .baseline { stroke: #3A4049; }
+      }
+    </style>
   </defs>
-  <!-- self-contained dark card so it reads on any README background -->
-  <!-- waveform glyph (the card itself is the "screen") -->
+  <!-- waveform glyph -->
   <g transform="translate(7,3) scale(1.15)">
-    <line x1="11" y1="46" x2="53" y2="46" stroke="#2E333B" stroke-width="1.7" stroke-linecap="round" />
+    <line class="baseline" x1="11" y1="46" x2="53" y2="46" stroke-width="1.7" stroke-linecap="round" />
     <path d="M11 40 H19 V25 H29 V40 H37 V25 H47 V40 H53"
           fill="none" stroke="#E0843A" stroke-width="4.4"
           stroke-linejoin="round" stroke-linecap="round" filter="url(#ts-glow)" />
   </g>
   <text x="96" y="56" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, monospace"
         font-size="34" font-weight="600" letter-spacing="-1.5">
-    <tspan fill="#C9D3DF">Tokio</tspan><tspan fill="#E0843A">Scope</tspan>
+    <tspan class="wordmark">Tokio</tspan><tspan fill="#E0843A">Scope</tspan>
   </text>
 </svg>
