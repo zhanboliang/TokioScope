@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import { EditorState, Compartment } from "@codemirror/state";
-  import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, gutters, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
+  import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, gutters, ViewPlugin, placeholder, tooltips, type ViewUpdate, type DecorationSet } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { syntaxHighlighting, HighlightStyle, indentUnit, StreamLanguage } from "@codemirror/language";
   import { rust } from "@codemirror/lang-rust";
@@ -233,6 +233,9 @@
         syntaxHighlighting(tsHighlight, { fallback: true }),
         placeholder(tr("editor.placeholder")),
         autocompletion({ override: [rustComplete] }),
+        // keep the completion / lint popups inside the editor rect so they're not
+        // clipped by the editor column when typing near the right edge.
+        tooltips({ tooltipSpace: (view) => view.dom.getBoundingClientRect() }),
         linter(lintFromAnalysis, { delay: 200 }),
         indentUnit.of("\t"),
         EditorState.tabSize.of(4),
@@ -241,7 +244,6 @@
         blinkField,
         errorLineField,
         runLineField,
-        execBand,
         themeCompartment.of(editorTheme()),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {

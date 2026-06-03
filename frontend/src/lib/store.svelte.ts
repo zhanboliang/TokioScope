@@ -72,15 +72,26 @@ class Store {
   rawStderr = $state<string[]>([]);
 
   get currentFrame(): Frame | null {
-    if (!this.sim || this.sim.frames.length === 0) return null;
-    // playhead is fractional during playback — floor to the current tick so the
-    // pools / editor show a real frame instead of frames[1.7] === undefined.
-    const idx = Math.max(0, Math.min(Math.floor(this.playhead), this.sim.frames.length - 1));
-    return this.sim.frames[idx];
+    const frames = this.sim?.frames;
+    if (!frames || frames.length === 0) return null;
+    // playhead is a TICK on the time axis. The virtual clock can skip ticks
+    // (sleeps fast-forward it), so frames are sparse — find the last frame whose
+    // tick is <= the floored playhead instead of indexing by array position.
+    const tick = Math.floor(this.playhead);
+    let lo = 0, hi = frames.length - 1, ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (frames[mid].tick <= tick) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    return frames[ans];
   }
 
+  // The time axis spans tick 0 .. last-frame's tick (NOT the frame count, which
+  // is smaller whenever the virtual clock skips ticks).
   get totalTicks(): number {
-    return this.sim?.frames.length ?? 0;
+    const frames = this.sim?.frames;
+    return frames && frames.length ? frames[frames.length - 1].tick + 1 : 0;
   }
 
   reset() {
@@ -131,7 +142,7 @@ class Store {
       }
       this.sim = this.#agg.result();
       if (this.follow && this.sim.frames.length > 0) {
-        this.playhead = this.sim.frames.length - 1;
+        this.playhead = this.sim.frames[this.sim.frames.length - 1].tick;
       }
     }
     if (this.#pendOut.length) {

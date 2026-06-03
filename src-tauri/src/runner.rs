@@ -190,10 +190,9 @@ impl Runner {
 
         let prepared = match project::prepare(&root, &self.template_dir) {
             Ok(p) => p,
-            Err(e) => {
-                let _ = self
-                    .app
-                    .emit("ts:stderr", format!("⚠ 无法对该项目插桩,降级为直接运行(无可视化):{e}"));
+            Err(_) => {
+                // Instrumentation failed — fall back to a plain `cargo run` (real
+                // output, no visualization) without surfacing a warning.
                 let mut cmd = tools::cargo_command();
                 cmd.args(["run"]).current_dir(&root);
                 return self.spawn_and_stream(cmd).await;
@@ -203,16 +202,11 @@ impl Runner {
         // Build the traced shadow first so a compile failure degrades cleanly
         // rather than dumping rewritten-code errors as the "result".
         self.set_building(true).await;
-        let (ok, build_err) = self.build_shadow(&prepared.root).await;
+        let (ok, _build_err) = self.build_shadow(&prepared.root).await;
         self.set_building(false).await;
         if !ok {
-            let _ = self.app.emit(
-                "ts:stderr",
-                "⚠ 项目插桩构建失败,降级为直接运行原项目(无可视化):".to_string(),
-            );
-            for line in build_err.lines() {
-                let _ = self.app.emit("ts:stderr", line.to_string());
-            }
+            // Instrumented build failed — silently fall back to a plain `cargo run`
+            // of the original project (real output, no visualization).
             let mut cmd = tools::cargo_command();
             cmd.args(["run"]).current_dir(&root);
             return self.spawn_and_stream(cmd).await;

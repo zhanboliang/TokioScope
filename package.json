@@ -1,7 +1,7 @@
 {
   "name": "tokioscope",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TokioScope — See how Tokio schedules your async code, tick by tick.",
   "workspaces": ["frontend"],
   "scripts": {

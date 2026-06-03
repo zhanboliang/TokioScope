@@ -9,7 +9,7 @@
   let wrap: HTMLDivElement;
   let hoverInfo = $state<string>("");
   // Tooltip for the single span the cursor is hovering: its state + lane label.
-  let segTip = $state<{ state: TaskState; label: string; x: number; y: number } | null>(null);
+  let segTip = $state<{ state: TaskState; label: string; x: number; y: number; below: boolean } | null>(null);
 
   const LANE_HEIGHT = 18;
   const LANE_PAD = 4;
@@ -179,7 +179,7 @@
 
   // Clamp pan so the view can't scroll past the content into empty space.
   function clampPan(p: number): number {
-    const total = store.sim?.frames.length ?? 0;
+    const total = store.totalTicks;
     const viewTicks = (wrap?.clientWidth ?? 0) / store.zoom;
     return Math.max(0, Math.min(Math.max(0, total - viewTicks), p));
   }
@@ -257,9 +257,13 @@
       const t = id != null ? f.tasks.get(id) : null;
       hoverInfo = t ? `${t.name} · ${t.state} · line ${t.currentLine} · evt ${t.eventCount} · ${t.durationTicks} ticks` : "";
       // Only show the segment tooltip while actually over a painted swatch.
-      segTip = t && inSwatch
-        ? { state: t.state, label: t.name, x: mx, y: laneTop }
-        : null;
+      if (t && inSwatch) {
+        // top lane: flip the tip below the swatch so it isn't clipped by the top edge
+        const below = laneTop < 34;
+        segTip = { state: t.state, label: t.name, x: mx, y: below ? laneTop + LANE_HEIGHT : laneTop, below };
+      } else {
+        segTip = null;
+      }
     } else {
       hoverInfo = "";
       segTip = null;
@@ -276,7 +280,7 @@
     if (!store.sim || store.sim.frames.length === 0) return;
     const w = canvas.clientWidth;
     store.panTick = 0;
-    store.zoom = Math.max(2, Math.min(120, w / Math.max(1, store.sim.frames.length)));
+    store.zoom = Math.max(2, Math.min(120, w / Math.max(1, store.totalTicks)));
     draw();
   }
 
@@ -299,7 +303,7 @@
       const w = canvas.clientWidth;
       store.panTick = 0;
       // leave ~15% headroom so newly arriving ticks don't immediately overflow
-      store.zoom = Math.max(8, Math.min(120, (w * 0.85) / Math.max(1, n)));
+      store.zoom = Math.max(8, Math.min(120, (w * 0.85) / Math.max(1, store.totalTicks)));
     }
     lastFrameCount = n;
   });
@@ -336,7 +340,7 @@
 
   <!-- per-segment state tooltip: only the hovered span's state -->
   {#if segTip}
-    <div class="tip" style="left: {segTip.x}px; top: {segTip.y}px;">
+    <div class="tip" class:below={segTip.below} style="left: {segTip.x}px; top: {segTip.y}px;">
       <span class="sw" style="background: {STATE_COLOR[segTip.state]}"></span>
       <span class="lab">{tr(`state.${segTip.state}`)}</span>
       <span class="task">{segTip.label}</span>
@@ -388,6 +392,7 @@
     white-space: nowrap;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   }
+  .tip.below { transform: translate(-50%, 6px); }
   .tip .sw { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
   .tip .lab { font-family: var(--ts-sans); font-size: 11px; font-weight: 600; color: var(--ts-fg); }
   .tip .task { font-family: var(--ts-mono); font-size: 10.5px; color: var(--ts-fg-3); }

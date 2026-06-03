@@ -43,9 +43,6 @@
     }
   });
 
-  function jump(tick: number) {
-    if (tick >= 0 && store.sim) store.playhead = tick;
-  }
 </script>
 
 <section class="panel">
@@ -58,10 +55,6 @@
         class:future
         class:cur
         data-tick={r.tick}
-        role={r.tick >= 0 ? "button" : undefined}
-        tabindex={r.tick >= 0 ? 0 : undefined}
-        onclick={() => jump(r.tick)}
-        onkeydown={(e) => { if (e.key === "Enter") jump(r.tick); }}
       >
         <span class="t">{r.tick < 0 ? "—" : `t${r.tick}`}</span>
         {#if r.line}<span class="ln">L{r.line}</span>{/if}
@@ -78,8 +71,6 @@
   .panel { background: var(--ts-bg-1); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
   .body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 12px; }
   .row { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; font-family: var(--ts-output-font); font-size: var(--ts-output-size); line-height: 1.5; color: var(--ts-fg); border-radius: 3px; padding: 0 4px; margin: 0 -4px; transition: opacity 140ms ease, background 140ms ease; }
-  .row[role="button"] { cursor: pointer; }
-  .row[role="button"]:hover { background: var(--ts-bg-3); }
   /* not-yet-reached output stays visible but recedes */
   .row.future { opacity: 0.38; }
   /* output emitted on the tick the playhead is parked on */
