@@ -1,8 +1,10 @@
 import { mount } from "svelte";
-import "@fontsource/ibm-plex-sans/300.css";
+// IBM Plex Sans (SIL OFL 1.1) for the interface chrome; JetBrains Mono (SIL OFL
+// 1.1) for the code editor, terminal and output.
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/600.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "./styles/globals.css";
 import "./styles/theme-dark.css";

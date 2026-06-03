@@ -35,6 +35,9 @@ html[data-theme="dark"] {
   --ts-st-done:     #6A8759;
 
   --ts-error:  #BC3F3C;
+
+  --ts-sel:        rgba(33, 66, 131, 0.9);     /* Darcula selection blue (#214283), near-solid */
+  --ts-sel-match:  rgba(104, 151, 187, 0.28);  /* lighter same-hue tint for other matches */
 }
 
 html { color-scheme: dark; }

@@ -47,15 +47,76 @@ export interface RunnerStatus {
   last_error: string | null;
 }
 
+// ── Workspace / filesystem ─────────────────────────────────────────────
+export interface DirEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_symlink: boolean;
+}
+export interface FileRead {
+  text: string;
+  too_large: boolean;
+  binary: boolean;
+  byte_len: number;
+}
+export interface WorkspaceInfo {
+  root: string;
+  name: string;
+  is_cargo: boolean;
+}
+
+export interface StartRunArgs {
+  source?: string;
+  runtime?: RuntimeConfig | null;
+  projectRoot?: string;
+}
+
 export const ipc = {
   listExamples: () => invoke<Example[]>("list_examples"),
   analyzeCode: (source: string) => invoke<ParseReport>("analyze_code", { source }),
-  startRun: (source: string, runtime?: RuntimeConfig) =>
-    invoke<void>("start_run", { args: { source, runtime: runtime ?? null } }),
+  startRun: (args: StartRunArgs) =>
+    invoke<void>("start_run", {
+      args: {
+        source: args.source ?? null,
+        runtime: args.runtime ?? null,
+        project_root: args.projectRoot ?? null,
+      },
+    }),
   cancelRun: () => invoke<void>("cancel_run"),
   ensureRunner: () => invoke<void>("ensure_runner"),
   runnerStatus: () => invoke<RunnerStatus>("runner_status"),
+
+  // filesystem
+  readDir: (path: string) => invoke<DirEntry[]>("read_dir", { path }),
+  readTextFile: (path: string) => invoke<FileRead>("read_text_file", { path }),
+  writeTextFile: (path: string, contents: string) =>
+    invoke<void>("write_text_file", { path, contents }),
+  workspaceInfo: (path: string) => invoke<WorkspaceInfo>("workspace_info", { path }),
+  createProject: (parent: string, name: string) =>
+    invoke<string>("create_project", { parent, name }),
+
+  // pty
+  ptySpawn: (cwd: string | null, cols: number, rows: number, shell?: string) =>
+    invoke<number>("pty_spawn", { cwd, cols, rows, shell: shell ?? null }),
+  ptyWrite: (id: number, data: string) => invoke<void>("pty_write", { id, data }),
+  ptyResize: (id: number, cols: number, rows: number) =>
+    invoke<void>("pty_resize", { id, cols, rows }),
+  ptyKill: (id: number) => invoke<void>("pty_kill", { id }),
+
+  // cargo.toml
 };
+
+export async function onPty(handler: (id: number, data: Uint8Array) => void): Promise<UnlistenFn> {
+  return await listen<{ id: number; data: number[] }>("ts:pty", (m) =>
+    handler(m.payload.id, new Uint8Array(m.payload.data)),
+  );
+}
+export async function onPtyExit(handler: (id: number, code: number | null) => void): Promise<UnlistenFn> {
+  return await listen<{ id: number; code: number | null }>("ts:pty-exit", (m) =>
+    handler(m.payload.id, m.payload.code),
+  );
+}
 
 export async function onEvent(handler: (e: RunnerEvent) => void): Promise<UnlistenFn> {
   return await listen<RunnerEvent>("ts:event", (msg) => handler(msg.payload));

@@ -1,14 +1,23 @@
 :root {
-  --ts-sans: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  /* IBM Plex Sans is the default UI font (proportional); JetBrains Mono is the
+     code / terminal / output font. --ts-sans-base holds the CJK-aware UI stack;
+     --ts-sans is the effective family. applyFonts() (lib/font.ts) overrides
+     --ts-sans by prepending the user's UI font, composing with the CJK fallback. */
+  --ts-sans-base: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ts-sans: var(--ts-sans-base);
   --ts-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
   --ts-cjk-zh: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC";
   --ts-cjk-ja: "Hiragino Sans", "Yu Gothic", "Noto Sans CJK JP";
   --ts-cjk-ko: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR";
+  /* output log + UI sizing — JS-overridable via applyFonts() */
+  --ts-output-font: var(--ts-mono);
+  --ts-output-size: 11px;
+  --ts-ui-size: 13px;
 }
 
-html[data-cjk="zh"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-zh), system-ui, sans-serif; }
-html[data-cjk="ja"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-ja), system-ui, sans-serif; }
-html[data-cjk="ko"] { --ts-sans: "IBM Plex Sans", var(--ts-cjk-ko), system-ui, sans-serif; }
+html[data-cjk="zh"] { --ts-sans-base: "IBM Plex Sans", var(--ts-cjk-zh), system-ui, sans-serif; }
+html[data-cjk="ja"] { --ts-sans-base: "IBM Plex Sans", var(--ts-cjk-ja), system-ui, sans-serif; }
+html[data-cjk="ko"] { --ts-sans-base: "IBM Plex Sans", var(--ts-cjk-ko), system-ui, sans-serif; }
 
 * { box-sizing: border-box; }
 
@@ -19,7 +28,7 @@ html, body {
   font-family: var(--ts-sans);
   background: var(--ts-bg-0);
   color: var(--ts-fg);
-  font-size: 13px;
+  font-size: var(--ts-ui-size);
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -55,11 +64,13 @@ button, input, select, textarea {
   scrollbar-color: var(--ts-line-2) transparent;
 }
 
-/* CodeMirror gutter still benefits from a hard left-edge so the visual
-   transition from gutter→code is crisp even when the wrap is on. */
+/* Borderless gutter (VSCode/Zed style): line numbers float on the editor canvas
+   with no visible strip or divider, but the background is OPAQUE (the editor
+   canvas color --ts-bg-2) so horizontally-scrolled code is masked as it slides
+   under the fixed gutter. CM's default gutter bg/border are overridden here. */
 .cm-gutters {
-  background: var(--ts-bg-1) !important;
-  border-right: 1px solid var(--ts-line) !important;
+  background: var(--ts-bg-2) !important;
+  border-right: none !important;
 }
 
 input[type="range"] {

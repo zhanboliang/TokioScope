@@ -6,10 +6,20 @@ import { t } from "./i18n.svelte";
 const MAX_FRAMES = 1500;   // tick-frames kept; once hit, collection stops + run is cancelled
 const MAX_OUTPUT = 1000;   // stdout / stderr scrollback lines
 
+// Bundled default families (both SIL OFL): JetBrains Mono for code / terminal /
+// output, IBM Plex Sans (proportional) for the UI. Overridable in Settings.
+export const DEFAULT_FONT = "JetBrains Mono";
+export const DEFAULT_UI_FONT = "IBM Plex Sans";
+
 class Store {
-  // Editor starts empty — the user writes (or loads an example with ⌘/Ctrl+1/2/3).
-  code = $state("");
   analysis = $state<ParseReport | null>(null);
+  // Identity of the buffer whose source produced the current sim — editor
+  // run-line decorations only apply when the active tab matches this. For a
+  // project run it's the entry file path; otherwise it's the active tab's id.
+  runFilePath = $state<string | null>(null);
+  // True when the current run targeted a whole Cargo project (drives the
+  // best-effort "experimental tracing" banner).
+  isProjectRun = $state(false);
   status = $state<RunnerStatus>({
     ready: false,
     building: false,
@@ -36,15 +46,26 @@ class Store {
   loop_ = $state(false);
   follow = $state(true);
 
-  // Layout
+  // Layout (editor/tree/bottom-panel layout lives in workspace.svelte.ts)
   theme = $state<"dark" | "light" | "hc">("dark");
-  codePaneWidth = $state(420);
-  outputHeight = $state(140);     // px; resizable inside code pane
   timelineHeight = $state(260);   // px; resizable inside viz column
+
+  // Four font areas — code editor, terminal, output log, and UI chrome — each a
+  // family + size (VSCode-style). Default family is the bundled JetBrains Mono;
+  // the user can replace any with a system font name (it falls back to the stack).
+  editorFont = $state(DEFAULT_FONT);
+  editorFontSize = $state(13);
+  terminalFont = $state(DEFAULT_FONT);
+  terminalFontSize = $state(12);
+  outputFont = $state(DEFAULT_FONT);
+  outputFontSize = $state(11);
+  uiFont = $state(DEFAULT_UI_FONT);
+  uiFontSize = $state(13);
   zoom = $state(20); // pixels per tick
   panTick = $state(0);
   inlineEdit = $state(false);
   showShortcuts = $state(false);
+  showSettings = $state(false);
 
   // Stdout / stderr feed (raw, in addition to engine printlns)
   rawStdout = $state<{ tick: number; text: string }[]>([]);

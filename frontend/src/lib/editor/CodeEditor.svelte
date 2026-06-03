@@ -1,16 +1,31 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
-  import { EditorState, Compartment, RangeSet } from "@codemirror/state";
-  import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, gutters, gutter, GutterMarker, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
+  import { EditorState, Compartment } from "@codemirror/state";
+  import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, gutters, ViewPlugin, placeholder, type ViewUpdate, type DecorationSet } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-  import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
+  import { syntaxHighlighting, HighlightStyle, indentUnit, StreamLanguage } from "@codemirror/language";
   import { rust } from "@codemirror/lang-rust";
+  import { toml } from "@codemirror/legacy-modes/mode/toml";
   import { tags as t } from "@lezer/highlight";
   import { StateField, StateEffect } from "@codemirror/state";
   import { autocompletion, completionKeymap, snippetCompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
   import { linter, lintGutter, forceLinting, type Diagnostic } from "@codemirror/lint";
   import { store } from "../store.svelte";
+  import { ws, type TabLang } from "../workspace.svelte";
   import { t as tr } from "../i18n.svelte"; // aliased — `t` is the lezer tags import
+
+  // Language per tab: rust uses the lezer parser; toml uses a legacy stream mode.
+  const langCompartment = new Compartment();
+  function langExt(lang: TabLang) {
+    if (lang === "rust") return rust();
+    if (lang === "toml") return StreamLanguage.define(toml);
+    return [];
+  }
+  // Identity used to match the active tab against the run target (tab id; for a
+  // file that's its path, which the project run target also uses).
+  function tabIdentity(): string {
+    return ws.active?.id ?? "";
+  }
 
   // Syntax theme mapped to the IDEA-Darcula design tokens. Colours are CSS vars,
   // so the highlight follows the active theme (dark / light / hc) automatically.
@@ -54,6 +69,7 @@
   // ── Diagnostics: surface the existing `syn` analysis (store.analysis) as
   //    inline squiggles. col is 0-based, line is 1-based (see parser.rs). ──────
   function lintFromAnalysis(view: EditorView): Diagnostic[] {
+    if (ws.active?.language !== "rust") return [];
     const report = store.analysis;
     if (!report?.diagnostics) return [];
     const doc = view.state.doc;
@@ -168,26 +184,6 @@
     },
   });
 
-  // IDEA-debugger ▶ marker in its own gutter, to the right of line numbers.
-  class RunArrow extends GutterMarker {
-    toDOM() {
-      const s = document.createElement("span");
-      s.className = "cm-run-arrow";
-      s.textContent = "▶";
-      return s;
-    }
-  }
-  const runArrow = new RunArrow();
-  const runGutter = gutter({
-    class: "cm-run-gutter",
-    markers: (v) => {
-      const ln = v.state.field(runLineField);
-      const doc = v.state.doc;
-      if (ln >= 1 && ln <= doc.lines) return RangeSet.of([runArrow.range(doc.line(ln).from)]);
-      return RangeSet.empty;
-    },
-  });
-
   // A single element that slides to the running line's geometry — the smooth
   // "current statement" band. Sits behind the text (opaque gutter bg hides the
   // part under the gutters), updated on every view change so it tracks scroll.
@@ -221,23 +217,25 @@
     }
   );
 
+  let ro: ResizeObserver | undefined;
+
   onMount(() => {
     const state = EditorState.create({
-      doc: store.code,
+      doc: ws.active?.content ?? "",
       extensions: [
         gutters({ fixed: true }),
         lineNumbers(),
-        runGutter,
+        lintGutter(),   // error/marker dot, right after the line numbers
         highlightActiveLine(),
         drawSelection(),
         history(),
-        rust(),
+        langCompartment.of(langExt(ws.active?.language ?? "rust")),
         syntaxHighlighting(tsHighlight, { fallback: true }),
         placeholder(tr("editor.placeholder")),
         autocompletion({ override: [rustComplete] }),
         linter(lintFromAnalysis, { delay: 200 }),
-        lintGutter(),
-        indentUnit.of("    "),
+        indentUnit.of("\t"),
+        EditorState.tabSize.of(4),
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         highlightField,
         blinkField,
@@ -247,7 +245,7 @@
         themeCompartment.of(editorTheme()),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
-            store.code = u.state.doc.toString();
+            ws.updateActiveContent(u.state.doc.toString());
             dispatch("input");
           }
         }),
@@ -255,14 +253,32 @@
       ],
     });
     view = new EditorView({ state, parent: root });
+    // CM6 doesn't re-measure on a pure container resize (no window/scroll event
+    // fires when a flex pane is dragged) — nudge it so the gutter + content
+    // reflow instead of leaving a gap.
+    ro = new ResizeObserver(() => view?.requestMeasure());
+    ro.observe(root);
   });
 
-  // Sync external code changes (example loads) back into editor.
+  // Follow tab switches (rebuild doc + language, reset run-state) and external
+  // content changes (example loads, Cargo.toml table edits) back into the editor.
+  let lastTabId = ws.activeId;
   $effect(() => {
-    if (!view) return;
+    const tab = ws.active; // tracks activeId
+    if (!view || !tab) return;
+    const content = tab.content; // tracks content
+    if (tab.id !== lastTabId) {
+      lastTabId = tab.id;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: content },
+        effects: langCompartment.reconfigure(langExt(tab.language)),
+      });
+      prevTaskState = new Map();
+      return;
+    }
     const cur = view.state.doc.toString();
-    if (cur !== store.code) {
-      view.dispatch({ changes: { from: 0, to: cur.length, insert: store.code } });
+    if (cur !== content) {
+      view.dispatch({ changes: { from: 0, to: cur.length, insert: content } });
     }
   });
 
@@ -270,6 +286,13 @@
   // blink lines whose task just finished waiting and is about to run.
   $effect(() => {
     if (!view) return;
+    // Run-line decorations only belong on the file that was actually run.
+    const isRunFile = ws.active?.language === "rust" && store.runFilePath === tabIdentity();
+    if (!isRunFile) {
+      view.dispatch({ effects: setHighlight.of({ runningLine: -1, lineStates: new Map() }) });
+      prevTaskState = new Map();
+      return;
+    }
     const frame = store.currentFrame;
     let runningLine = -1;
     const lineStates = new Map<number, LineState>();
@@ -304,7 +327,7 @@
 
   // Theme follow
   $effect(() => {
-    void store.theme;
+    void store.theme; void store.editorFont; void store.editorFontSize;
     view?.dispatch({ effects: themeCompartment.reconfigure(editorTheme()) });
   });
 
@@ -312,6 +335,10 @@
   $effect(() => {
     const report = store.analysis;
     if (!view) return;
+    if (ws.active?.language !== "rust") {
+      view.dispatch({ effects: setErrorLines.of([]) });
+      return;
+    }
     forceLinting(view);
     const lines = report?.diagnostics?.filter((d) => d.level === "error").map((d) => d.line) ?? [];
     view.dispatch({ effects: setErrorLines.of(lines) });
@@ -319,16 +346,18 @@
 
   function editorTheme() {
     const dark = store.theme !== "light";
+    // User-overridable editor font, falling back to the bundled mono.
+    const mono = store.editorFont ? `${store.editorFont}, var(--ts-mono)` : "var(--ts-mono)";
     return EditorView.theme({
       "&": {
         height: "100%",
         background: "var(--ts-bg-2)",
         color: "var(--ts-fg)",
-        fontFamily: "var(--ts-mono)",
-        fontSize: "13px",
+        fontFamily: mono,
+        fontSize: `${store.editorFontSize}px`,
       },
       ".cm-scroller": {
-        fontFamily: "var(--ts-mono)",
+        fontFamily: mono,
         lineHeight: "1.55",
         position: "relative",          // positioning context for the exec band
       },
@@ -338,21 +367,30 @@
       },
       // drawSelection() renders its own caret; native one is hidden. Theme it.
       ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ts-accent)" },
+      // drawSelection() forces native ::selection transparent, so colour the
+      // rect it draws. Same colour focused/unfocused so the selection stays
+      // legible when the autocomplete popup steals focus.
+      // !important is required: CM's default selection rule
+      // (&dark.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground)
+      // is more specific than ours and would otherwise win with its teal #233.
+      ".cm-selectionBackground": { background: "var(--ts-sel) !important" },
+      "&.cm-focused .cm-selectionBackground": { background: "var(--ts-sel) !important" },
+      ".cm-selectionMatch": { background: "var(--ts-sel-match)" },
       ".cm-gutters": {
-        background: "var(--ts-bg-1)",
+        background: "var(--ts-bg-2)",   // opaque editor canvas → masks horizontally-scrolled code, still seamless
         color: "var(--ts-fg-3)",
-        borderRight: "1px solid var(--ts-line)",
+        border: "none",
       },
-      ".cm-gutterElement": { padding: "0 8px 0 12px" },
+      ".cm-lineNumbers .cm-gutterElement": { padding: "0 3px 0 6px", minWidth: "16px" },
       ".cm-activeLine": { background: dark ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.04)" },
       ".cm-activeLineGutter": { background: "transparent", color: "var(--ts-fg-2)" },
       ".cm-line": { transition: "background-color 120ms ease" },
       // per-state line fills (.cm-st-*) live in the <style> block so a single
       // color-mix definition tracks the --ts-st-* vars across all themes.
-      // ▶ execution arrow gutter (sits between line numbers and the code)
-      ".cm-run-gutter": { width: "14px" },
-      ".cm-run-gutter .cm-gutterElement": { padding: "0", textAlign: "center" },
-      ".cm-run-arrow": { color: "var(--ts-st-running)", fontSize: "10px", fontWeight: "bold", lineHeight: "1.55" },
+      // lint marker dot — compact column right after the line numbers, centered
+      ".cm-gutter-lint": { width: "13px" },
+      ".cm-gutter-lint .cm-gutterElement": { padding: "0", display: "flex", alignItems: "center", justifyContent: "center" },
+      ".cm-lint-marker": { width: "10px", height: "10px" },
       // the sliding "current statement" band reinforces the run line as it moves
       ".cm-exec-band": {
         position: "absolute",
@@ -372,7 +410,7 @@
         boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
       },
       ".cm-tooltip-autocomplete > ul > li": {
-        fontFamily: "var(--ts-mono)",
+        fontFamily: mono,
         fontSize: "12px",
         color: "var(--ts-fg-2)",
         padding: "2px 8px",
@@ -412,6 +450,7 @@
   onDestroy(() => {
     for (const tid of blinkTimers) clearTimeout(tid);
     blinkTimers.clear();
+    ro?.disconnect();
     view?.destroy();
   });
 </script>
@@ -426,17 +465,15 @@
   }
   :global(.cm-editor.cm-focused) { outline: none; }
 
-  /* gentle "breathing" pulse on the active statement — the exec band tint and
-     the ▶ gutter arrow fade in sync so the eye is drawn to the running line
-     without the flicker being distracting. */
+  /* gentle "breathing" pulse on the active statement — the exec band tint fades
+     in and out so the eye is drawn to the running line without distraction. */
   :global(.cm-exec-band) { animation: ts-exec-pulse 1.15s ease-in-out infinite; }
-  :global(.cm-run-arrow) { animation: ts-exec-pulse 1.15s ease-in-out infinite; }
   @keyframes ts-exec-pulse {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.4; }
   }
   @media (prefers-reduced-motion: reduce) {
-    :global(.cm-exec-band), :global(.cm-run-arrow) { animation: none; }
+    :global(.cm-exec-band) { animation: none; }
   }
 
   /* per-state line fills — one color-mix definition tracks the --ts-st-* vars

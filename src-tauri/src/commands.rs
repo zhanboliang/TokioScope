@@ -19,17 +19,24 @@ pub fn analyze_code(source: String) -> ParseReport {
 
 #[derive(Deserialize)]
 pub struct StartArgs {
-    pub source: String,
+    /// Snippet / single-file source. Ignored when `project_root` is set.
+    pub source: Option<String>,
     pub runtime: Option<RuntimeConfig>,
+    /// When present, trace/run the whole Cargo project at this path instead.
+    pub project_root: Option<String>,
 }
 
 #[tauri::command]
 pub async fn start_run(args: StartArgs, state: State<'_, AppState>) -> TsResult<()> {
+    if let Some(root) = args.project_root {
+        return state.runner.start_project(PathBuf::from(root)).await;
+    }
+    let source = args.source.unwrap_or_default();
     let runtime = args.runtime.unwrap_or_else(|| {
         // Re-derive from the source so user changes to `#[tokio::main]` flow through.
-        parser::analyze(&args.source).runtime
+        parser::analyze(&source).runtime
     });
-    state.runner.start(args.source, runtime).await
+    state.runner.start(source, runtime).await
 }
 
 #[tauri::command]
@@ -39,9 +46,8 @@ pub async fn cancel_run(state: State<'_, AppState>) -> TsResult<()> {
 }
 
 #[tauri::command]
-pub async fn ensure_runner(app: tauri::AppHandle, state: State<'_, AppState>) -> TsResult<()> {
-    let template_dir = resolve_template_dir(&app);
-    state.runner.ensure(template_dir).await
+pub async fn ensure_runner(state: State<'_, AppState>) -> TsResult<()> {
+    state.runner.ensure().await
 }
 
 #[tauri::command]
@@ -49,7 +55,7 @@ pub async fn runner_status(state: State<'_, AppState>) -> TsResult<RunnerStatus>
     Ok(state.runner.status().await)
 }
 
-fn resolve_template_dir(app: &tauri::AppHandle) -> PathBuf {
+pub(crate) fn resolve_template_dir(app: &tauri::AppHandle) -> PathBuf {
     // In dev, the template lives at <cwd>/../runner-template. In bundled apps,
     // we ship it under the resource dir.
     if let Ok(resource) = app.path().resource_dir() {

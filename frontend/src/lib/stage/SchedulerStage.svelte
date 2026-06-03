@@ -26,6 +26,38 @@
     return tasks?.get(id);
   }
 
+  // user-resizable Ready | CPU | Awaiting columns, held as fr ratios
+  let cols = $state<[number, number, number]>([1, 1.7, 1.3]);
+  let lanesEl: HTMLDivElement;
+  // drag between cols[gap] and cols[gap+1]; px-per-fr derived from the lanes width
+  let drag = $state<null | { gap: 0 | 1; startX: number; a: number; b: number; perFr: number }>(null);
+
+  const MIN_FR = 0.4;
+
+  function startSepDrag(gap: 0 | 1) {
+    return (e: PointerEvent) => {
+      const total = cols[0] + cols[1] + cols[2];
+      const perFr = lanesEl ? lanesEl.clientWidth / total : 0;
+      drag = { gap, startX: e.clientX, a: cols[gap], b: cols[gap + 1], perFr };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+  }
+  function onSepMove(e: PointerEvent) {
+    if (!drag || !drag.perFr) return;
+    const dFr = (e.clientX - drag.startX) / drag.perFr;
+    const sum = drag.a + drag.b;
+    const a = Math.max(MIN_FR, Math.min(sum - MIN_FR, drag.a + dFr));
+    const next: [number, number, number] = [cols[0], cols[1], cols[2]];
+    next[drag.gap] = a;
+    next[drag.gap + 1] = sum - a;
+    cols = next;
+  }
+  function endSepDrag(e: PointerEvent) {
+    drag = null;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  }
+
   // Cross-zone flow: a chip leaving one zone (out:send) and entering another
   // (in:receive), matched by task id, animates from its old spot to its new one.
   const [send, receive] = crossfade({
@@ -34,7 +66,11 @@
   });
   const FLIP = { duration: 240 };
 
-  function awaitTag(reason?: string): string {
+  // Icon-only await marker (full label kept as a tooltip) — #3 less text.
+  function awaitIcon(reason?: string): string {
+    return reason === "timer" ? "⏱" : reason === "children" ? "⏳" : reason === "blocking" ? "🧵" : "…";
+  }
+  function awaitLabel(reason?: string): string {
     return reason === "timer" ? tr("await.timer")
       : reason === "children" ? tr("await.children")
       : reason === "blocking" ? tr("await.blocking")
@@ -50,24 +86,43 @@
   </span>
 {/snippet}
 
+{#snippet zicon(kind: string)}
+  <svg class="zi" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"
+    stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {#if kind === "ready"}<path d="M2.5 4h11M2.5 8h11M2.5 12h7" />
+    {:else if kind === "cpu"}<rect x="3.5" y="3.5" width="9" height="9" rx="1.2" /><path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2" />
+    {:else if kind === "await"}<circle cx="8" cy="8" r="5.6" /><path d="M8 5v3.2l2 1.3" />
+    {:else if kind === "blocking"}<path d="M4 2v3.6l4 4 4-4V2M4 14v-3.6l4-4 4 4V14" />
+    {:else if kind === "done"}<path d="M3 8.5l3.2 3 6-7" />{/if}
+  </svg>
+{/snippet}
+
 <section class="stage">
-  <div class="lanes">
+  <div
+    class="lanes"
+    bind:this={lanesEl}
+    style="grid-template-columns: {cols[0]}fr 4px {cols[1]}fr 4px {cols[2]}fr"
+  >
     <!-- ready queue -->
     <div class="zone ready">
-      <header>{tr("zone.ready")} · {ready.length}</header>
+      <header title={tr("zone.ready")}>{@render zicon("ready")}<b>{ready.length}</b></header>
       <div class="list">
         {#each readyTasks as t (t.id)}
           <div class="row" in:receive={{ key: t.id }} out:send={{ key: t.id }} animate:flip={FLIP}>
             {@render chip(t)}
           </div>
         {/each}
-        {#if readyTasks.length === 0}<div class="empty">{tr("stage.empty")}</div>{/if}
+        {#if readyTasks.length === 0}<div class="empty" title={tr("stage.empty")}>—</div>{/if}
       </div>
     </div>
 
+    <!-- Ready | CPU separator -->
+    <div class="sep" role="separator" aria-orientation="vertical"
+      onpointerdown={startSepDrag(0)} onpointermove={onSepMove} onpointerup={endSepDrag}></div>
+
     <!-- CPU cores -->
     <div class="zone cpu">
-      <header>{tr("zone.cpu", { n: cores.length })}</header>
+      <header title={tr("zone.cpu", { n: cores.length })}>{@render zicon("cpu")}<b>{cores.length}</b></header>
       <div class="cores">
         {#each cores as id, i (i)}
           <div class="core" class:busy={id != null}>
@@ -82,31 +137,35 @@
                 {/each}
               {/if}
             {:else}
-              <span class="idle">{tr("stage.idle")}</span>
+              <span class="idle" title={tr("stage.idle")}>·</span>
             {/if}
           </div>
         {/each}
       </div>
     </div>
 
+    <!-- CPU | Awaiting separator -->
+    <div class="sep" role="separator" aria-orientation="vertical"
+      onpointerdown={startSepDrag(1)} onpointermove={onSepMove} onpointerup={endSepDrag}></div>
+
     <!-- await / timer -->
     <div class="zone awaitz">
-      <header>{tr("zone.await")} · {awaiting.length}</header>
+      <header title={tr("zone.await")}>{@render zicon("await")}<b>{awaiting.length}</b></header>
       <div class="list">
         {#each awaiting as t (t.id)}
           <div class="row awaitrow" in:receive={{ key: t.id }} out:send={{ key: t.id }} animate:flip={FLIP}>
-            <span class="why">{awaitTag(t.awaitReason)}</span>
+            <span class="why" title={awaitLabel(t.awaitReason)}>{awaitIcon(t.awaitReason)}</span>
             {@render chip(t)}
           </div>
         {/each}
-        {#if awaiting.length === 0}<div class="empty">{tr("stage.empty")}</div>{/if}
+        {#if awaiting.length === 0}<div class="empty" title={tr("stage.empty")}>—</div>{/if}
       </div>
     </div>
   </div>
 
   <!-- blocking pool -->
   <div class="blocking">
-    <span class="bl-label">{tr("zone.blocking")}</span>
+    <span class="bl-label" title={tr("zone.blocking")}>{@render zicon("blocking")}</span>
     <div class="bslots">
       {#each slots as s, i}
         {@const bt = s.taskId != null ? task(s.taskId) : null}
@@ -127,7 +186,7 @@
   <!-- done tray -->
   {#if done.length}
     <div class="done-tray">
-      <span class="dt-label">{tr("zone.done")} · {done.length}</span>
+      <span class="dt-label" title={tr("zone.done")}>{@render zicon("done")} {done.length}</span>
       {#each done as t (t.id)}
         <div
           class="done-item"
@@ -157,12 +216,15 @@
   }
   .lanes {
     display: grid;
-    grid-template-columns: 1fr 1.7fr 1.3fr;
-    gap: 1px;
-    background: var(--ts-line);
+    /* grid-template-columns is set inline from resizable fr state, with two
+       4px handle tracks between the three zones */
     flex: 1 1 auto;
     min-height: 0;
+    background: var(--ts-line);
   }
+  /* draggable zone separators — mirror the app's .vsep affordance */
+  .sep { background: var(--ts-line); cursor: col-resize; }
+  .sep:hover { background: var(--ts-line-2); }
   .zone {
     display: flex;
     flex-direction: column;
@@ -171,14 +233,20 @@
     overflow: hidden;
   }
   .zone > header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
     padding: 6px 10px;
     font-family: var(--ts-mono);
-    font-size: 10px;
-    letter-spacing: 0.04em;
+    font-size: 11px;
     color: var(--ts-fg-2);
     border-bottom: 1px solid var(--ts-line);
   }
+  .zone > header b { color: var(--ts-fg); font-weight: 600; }
+  .zi { color: var(--ts-fg-3); flex-shrink: 0; }
+  .cpu > header .zi { color: var(--ts-st-running); }
+  .awaitz > header .zi { color: var(--ts-st-awaiting); }
   .list {
     flex: 1 1 auto;
     min-height: 0;

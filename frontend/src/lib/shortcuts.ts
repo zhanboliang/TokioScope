@@ -1,5 +1,7 @@
 import { store } from "./store.svelte";
 import { ipc } from "./ipc";
+import { ws } from "./workspace.svelte";
+import { runActive } from "./run";
 import { t } from "./i18n.svelte";
 
 export interface ShortcutGroup {
@@ -47,18 +49,26 @@ export function getShortcuts(): ShortcutGroup[] {
 
 export function bindGlobal(loadExample: (idx: number) => void) {
   const handler = (e: KeyboardEvent) => {
-    // ignore when typing in editor — CodeMirror lives in #editor-root
+    // ignore when typing in the editor or any form field, so arrows / space /
+    // letters reach the input instead of driving playback.
     const tgt = e.target as HTMLElement | null;
-    if (tgt && (tgt.closest("#editor-root") || tgt.isContentEditable)) {
+    const tag = tgt?.tagName;
+    if (tgt && (tgt.closest("#editor-root") || tgt.isContentEditable
+        || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")) {
       // allow ⌘/Ctrl+Enter for run even inside editor
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        runCode();
+        runActive();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ".") {
         e.preventDefault();
         ipc.cancelRun();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        ws.saveActive();
         return;
       }
       // allow ⌘/Ctrl+1/2/3 to load examples even while editing
@@ -71,8 +81,9 @@ export function bindGlobal(loadExample: (idx: number) => void) {
     }
 
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key === "Enter") { e.preventDefault(); runCode(); return; }
+    if (mod && e.key === "Enter") { e.preventDefault(); runActive(); return; }
     if (mod && e.key === ".") { e.preventDefault(); ipc.cancelRun(); return; }
+    if (mod && (e.key === "s" || e.key === "S")) { e.preventDefault(); ws.saveActive(); return; }
     if (mod && e.key === "e") { e.preventDefault(); store.inlineEdit = !store.inlineEdit; return; }
     if (mod && (e.key === "1" || e.key === "2" || e.key === "3")) {
       e.preventDefault();
@@ -133,13 +144,4 @@ export function bindGlobal(loadExample: (idx: number) => void) {
   };
   window.addEventListener("keydown", handler);
   return () => window.removeEventListener("keydown", handler);
-}
-
-async function runCode() {
-  store.reset();
-  try {
-    await ipc.startRun(store.code);
-  } catch (e) {
-    store.rawStderr = [...store.rawStderr, `start_run failed: ${e}`];
-  }
 }

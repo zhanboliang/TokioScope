@@ -34,4 +34,7 @@ html[data-theme="hc"] {
   --ts-st-done:     #6BBA75;
 
   --ts-error:  #FF6B68;
+
+  --ts-sel:        rgba(38, 79, 120, 0.75);    /* dense blue on pure-black canvas */
+  --ts-sel-match:  rgba(88, 157, 246, 0.30);
 }

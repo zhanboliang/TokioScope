@@ -49,7 +49,6 @@
 </script>
 
 <section class="panel">
-  <header>{t("output.header")} · {rows.length}</header>
   <div class="body" bind:this={body}>
     {#each rows as r}
       {@const future = r.tick >= 0 && r.tick > curTick}
@@ -76,10 +75,9 @@
 </section>
 
 <style>
-  .panel { background: var(--ts-bg-1); border-top: 1px solid var(--ts-line); display: grid; grid-template-rows: auto 1fr; height: 100%; overflow: hidden; }
-  header { padding: 6px 12px; font-family: var(--ts-mono); font-size: 10px; letter-spacing: 0.1em; color: var(--ts-fg-2); border-bottom: 1px solid var(--ts-line); }
-  .body { overflow: auto; padding: 6px 12px; }
-  .row { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; font-family: var(--ts-mono); font-size: 11px; line-height: 1.5; color: var(--ts-fg); border-radius: 3px; padding: 0 4px; margin: 0 -4px; transition: opacity 140ms ease, background 140ms ease; }
+  .panel { background: var(--ts-bg-1); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  .body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 12px; }
+  .row { display: grid; grid-template-columns: 44px auto 1fr; gap: 8px; font-family: var(--ts-output-font); font-size: var(--ts-output-size); line-height: 1.5; color: var(--ts-fg); border-radius: 3px; padding: 0 4px; margin: 0 -4px; transition: opacity 140ms ease, background 140ms ease; }
   .row[role="button"] { cursor: pointer; }
   .row[role="button"]:hover { background: var(--ts-bg-3); }
   /* not-yet-reached output stays visible but recedes */
@@ -91,5 +89,5 @@
   .ln { color: var(--ts-accent); }
   .stderr .text { color: #e07070; }
   .stdout .text { color: var(--ts-fg-2); font-style: italic; }
-  .empty { color: var(--ts-fg-3); font-family: var(--ts-mono); font-size: 11px; font-style: italic; }
+  .empty { color: var(--ts-fg-3); font-family: var(--ts-output-font); font-size: var(--ts-output-size); font-style: italic; }
 </style>

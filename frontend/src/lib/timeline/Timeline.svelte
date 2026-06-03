@@ -8,10 +8,9 @@
   let canvas: HTMLCanvasElement;
   let wrap: HTMLDivElement;
   let hoverInfo = $state<string>("");
-  let legendHover = $state(false);
-  let legendPinned = $state(false);
+  // Tooltip for the single span the cursor is hovering: its state + lane label.
+  let segTip = $state<{ state: TaskState; label: string; x: number; y: number } | null>(null);
 
-  const LEGEND: TaskState[] = ["ready", "running", "awaiting", "blocking", "done"];
   const LANE_HEIGHT = 18;
   const LANE_PAD = 4;
 
@@ -167,6 +166,17 @@
     return "JetBrains Mono, ui-monospace, monospace";
   }
 
+  // Same lane ordering draw() uses: first-seen spawn order across all frames.
+  function laneOrder(sim: NonNullable<typeof store.sim>): number[] {
+    const meta = new Map<number, number>(); // id -> bornTick
+    for (const f of sim.frames) {
+      for (const [id, t] of f.tasks) {
+        if (!meta.has(id)) meta.set(id, t.bornTick);
+      }
+    }
+    return [...meta.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0]).map(([id]) => id);
+  }
+
   // Clamp pan so the view can't scroll past the content into empty space.
   function clampPan(p: number): number {
     const total = store.sim?.frames.length ?? 0;
@@ -236,15 +246,23 @@
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const tick = Math.round(store.panTick + mx / store.zoom);
+    // Lane order must match draw(): global spawn order across all frames, not
+    // per-frame, so the lane the cursor sits on lines up with what's painted.
     const laneIdx = Math.floor((my - 16) / (LANE_HEIGHT + LANE_PAD));
+    const laneTop = 16 + laneIdx * (LANE_HEIGHT + LANE_PAD);
+    const inSwatch = my >= laneTop + 2 && my <= laneTop + LANE_HEIGHT - 2;
     const f = store.sim?.frames[Math.min(tick, (store.sim?.frames.length ?? 1) - 1)];
     if (f && laneIdx >= 0) {
-      const taskIds = [...f.tasks.entries()].sort((a, b) => a[1].bornTick - b[1].bornTick || a[0] - b[0]).map(([id]) => id);
-      const id = taskIds[laneIdx];
+      const id = laneOrder(store.sim!)[laneIdx];
       const t = id != null ? f.tasks.get(id) : null;
       hoverInfo = t ? `${t.name} · ${t.state} · line ${t.currentLine} · evt ${t.eventCount} · ${t.durationTicks} ticks` : "";
+      // Only show the segment tooltip while actually over a painted swatch.
+      segTip = t && inSwatch
+        ? { state: t.state, label: t.name, x: mx, y: laneTop }
+        : null;
     } else {
       hoverInfo = "";
+      segTip = null;
     }
   }
   function onPointerUp(e: PointerEvent) {
@@ -264,6 +282,10 @@
 
   onMount(() => {
     resize();
+    // The canvas can measure 0×0 on the first synchronous pass (layout not settled
+    // yet — e.g. right after an HMR swap), which leaves it blank until something
+    // else triggers a redraw. Force one on the next frame so it self-heals.
+    requestAnimationFrame(resize);
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
     return () => ro.disconnect();
@@ -295,7 +317,9 @@
   });
 </script>
 
-<div class="wrap" bind:this={wrap}>
+<div class="wrap" bind:this={wrap}
+  onmouseleave={() => (segTip = null)}
+  role="presentation">
   <canvas
     bind:this={canvas}
     onwheel={onWheel}
@@ -305,25 +329,19 @@
     ondblclick={onDblClick}
   ></canvas>
 
-  <!-- color legend: hover the ? (or click to pin) -->
-  <div class="legend-anchor"
-    onmouseenter={() => (legendHover = true)}
-    onmouseleave={() => (legendHover = false)}
-    role="presentation">
-    <button class="legend-toggle" class:on={legendPinned}
-      onclick={() => (legendPinned = !legendPinned)} aria-label={tr("tl.legend")}>?</button>
-    {#if legendHover || legendPinned}
-      <div class="legend">
-        {#each LEGEND as s}
-          <div class="row">
-            <span class="sw" style="background: {STATE_COLOR[s]}"></span>
-            <span class="lab">{tr(`state.${s}`)}</span>
-            <span class="desc">{tr(`state.${s}.desc`)}</span>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
+  <!-- precise playback position, moved off the status bar onto the timeline -->
+  {#if store.sim}
+    <div class="tick-readout">tick {Math.round(store.playhead)} / {Math.max(0, store.totalTicks - 1)}</div>
+  {/if}
+
+  <!-- per-segment state tooltip: only the hovered span's state -->
+  {#if segTip}
+    <div class="tip" style="left: {segTip.x}px; top: {segTip.y}px;">
+      <span class="sw" style="background: {STATE_COLOR[segTip.state]}"></span>
+      <span class="lab">{tr(`state.${segTip.state}`)}</span>
+      <span class="task">{segTip.label}</span>
+    </div>
+  {/if}
 
   {#if hoverInfo}<div class="hover">{hoverInfo}</div>{/if}
 </div>
@@ -342,40 +360,37 @@
     height: 100%;
     cursor: crosshair;
   }
-  .legend-anchor { position: absolute; top: 6px; right: 8px; z-index: 5; }
-  .legend-toggle {
-    width: 18px;
-    height: 18px;
-    padding: 0;
+  .tick-readout {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    z-index: 4;
+    pointer-events: none;
+    font-family: var(--ts-mono);
+    font-size: 10px;
+    color: var(--ts-fg-2);
+    background: color-mix(in srgb, var(--ts-bg-0) 72%, transparent);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .tip {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    transform: translate(-50%, calc(-100% - 6px));
     display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 50%;
+    gap: 7px;
+    padding: 4px 8px;
     background: var(--ts-bg-1);
     border: 1px solid var(--ts-line-2);
-    color: var(--ts-fg-2);
-    font-family: var(--ts-mono);
-    font-size: 11px;
-    line-height: 1;
-    cursor: pointer;
+    border-radius: 4px;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   }
-  .legend-toggle:hover, .legend-toggle.on { color: var(--ts-accent); border-color: var(--ts-accent); }
-  .legend {
-    position: absolute;
-    top: 23px;
-    right: 0;
-    display: grid;
-    gap: 5px;
-    padding: 8px 10px;
-    background: var(--ts-bg-1);
-    border: 1px solid var(--ts-line-2);
-    border-radius: 6px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-  .legend .row { display: flex; align-items: center; gap: 8px; }
-  .legend .sw { width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0; }
-  .legend .lab { font-family: var(--ts-sans); font-size: 11px; font-weight: 600; color: var(--ts-fg); white-space: nowrap; min-width: 28px; }
-  .legend .desc { font-family: var(--ts-sans); font-size: 10.5px; color: var(--ts-fg-3); white-space: nowrap; }
+  .tip .sw { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .tip .lab { font-family: var(--ts-sans); font-size: 11px; font-weight: 600; color: var(--ts-fg); }
+  .tip .task { font-family: var(--ts-mono); font-size: 10.5px; color: var(--ts-fg-3); }
 
   .hover {
     position: absolute;

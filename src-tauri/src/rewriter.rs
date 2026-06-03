@@ -5,20 +5,45 @@ use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
 use syn::{Expr, ExprAwait, ExprCall, ExprPath, Macro};
 
-/// Rewrite user source: strip `#[tokio::main]` (we drive runtime ourselves),
-/// wrap supported primitives in `__tracer::*` calls carrying line numbers.
+/// Result of preparing an entry file: the instrumented source (with
+/// `#[tokio::main]` stripped and `main` renamed to `__ts_user_main`) and whether
+/// such a main was actually found.
+pub struct EntryResult {
+    pub code: String,
+    pub found_main: bool,
+}
+
+/// Instrument one file's supported primitives (`tokio::spawn`, `.await`,
+/// `sleep`, `println!`, `tokio::join!`) in place, **without** touching any entry
+/// point. Used for every `.rs` file when tracing a whole project.
 ///
-/// Returns formatted Rust source. On parse failure, returns the original
-/// source unchanged so the wrapper crate's compile error message is the
-/// authoritative report.
-pub fn rewrite(source: &str) -> String {
+/// On parse failure returns the source verbatim so the file still compiles —
+/// the per-file best-effort fallback for project tracing.
+pub fn rewrite_file(source: &str) -> String {
     let mut file = match syn::parse_file(source) {
         Ok(f) => f,
         Err(_) => return source.to_owned(),
     };
+    let mut visitor = Rewriter;
+    visitor.visit_file_mut(&mut file);
+    prettyplease::unparse(&file)
+}
 
-    let mut user_main_name: Option<syn::Ident> = None;
+/// Instrument a file **and** strip `#[tokio::main]` / rename `main` →
+/// `__ts_user_main`, so the caller can drive the runtime via the tracer. No
+/// entry stub is appended. On parse failure the source is returned verbatim.
+pub fn prepare_entry(source: &str) -> EntryResult {
+    let mut file = match syn::parse_file(source) {
+        Ok(f) => f,
+        Err(_) => {
+            return EntryResult {
+                code: source.to_owned(),
+                found_main: false,
+            }
+        }
+    };
 
+    let mut found_main = false;
     for item in file.items.iter_mut() {
         if let syn::Item::Fn(f) = item {
             let mut keep_attrs = Vec::new();
@@ -32,10 +57,8 @@ pub fn rewrite(source: &str) -> String {
             }
             f.attrs = keep_attrs;
             if had_tokio_main && f.sig.ident == "main" {
-                // Rename to user_main so we control startup.
-                let new_ident = syn::Ident::new("__ts_user_main", f.sig.ident.span());
-                f.sig.ident = new_ident.clone();
-                user_main_name = Some(new_ident);
+                f.sig.ident = syn::Ident::new("__ts_user_main", f.sig.ident.span());
+                found_main = true;
             }
         }
     }
@@ -43,20 +66,34 @@ pub fn rewrite(source: &str) -> String {
     let mut visitor = Rewriter;
     visitor.visit_file_mut(&mut file);
 
-    let mut out = prettyplease::unparse(&file);
-    if let Some(name) = user_main_name {
-        out.push_str(&format!(
-            "\npub fn __ts_user_entry() -> impl std::future::Future<Output = ()> + Send + 'static {{ {name}() }}\n",
-            name = name
-        ));
+    EntryResult {
+        code: prettyplease::unparse(&file),
+        found_main,
+    }
+}
+
+/// Rewrite a single self-contained snippet for the template crate: strip
+/// `#[tokio::main]` (we drive the runtime ourselves), instrument primitives, and
+/// append the `__ts_user_entry` the template's `main.rs` calls.
+///
+/// On parse failure returns the original source unchanged so the wrapper crate's
+/// compile error message stays authoritative.
+pub fn rewrite(source: &str) -> String {
+    if syn::parse_file(source).is_err() {
+        return source.to_owned();
+    }
+    let EntryResult { mut code, found_main } = prepare_entry(source);
+    if found_main {
+        code.push_str(
+            "\npub fn __ts_user_entry() -> impl std::future::Future<Output = ()> + Send + 'static { __ts_user_main() }\n",
+        );
     } else {
-        // No `#[tokio::main]` found; rewriter still produces a stub entry that
-        // is a no-op so the harness compiles.
-        out.push_str(
+        // No `#[tokio::main]` found; emit a no-op entry so the harness compiles.
+        code.push_str(
             "\npub fn __ts_user_entry() -> impl std::future::Future<Output = ()> + Send + 'static { async {} }\n",
         );
     }
-    out
+    code
 }
 
 fn is_tokio_main(attr: &syn::Attribute) -> bool {
@@ -229,5 +266,40 @@ mod tests {
         "#;
         let out = rewrite(src);
         assert!(out.contains("__tracer::println"));
+    }
+
+    #[test]
+    fn rewrite_file_instruments_without_entry_stub() {
+        // A non-entry project file: instrument primitives, but never rename main
+        // or append __ts_user_entry.
+        let src = r#"
+            pub async fn helper() {
+                tokio::spawn(async {});
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        "#;
+        let out = rewrite_file(src);
+        assert!(out.contains("__tracer::spawn"));
+        assert!(out.contains("__tracer::sleep"));
+        assert!(!out.contains("__ts_user_entry"));
+        assert!(!out.contains("__ts_user_main"));
+    }
+
+    #[test]
+    fn rewrite_file_passes_through_unparseable() {
+        let src = "fn main() { let x = ";
+        assert_eq!(rewrite_file(src), src);
+    }
+
+    #[test]
+    fn prepare_entry_detects_and_renames_main() {
+        let with = prepare_entry("#[tokio::main]\nasync fn main() {}\n");
+        assert!(with.found_main);
+        assert!(with.code.contains("__ts_user_main"));
+        assert!(!with.code.contains("tokio::main"));
+
+        let without = prepare_entry("async fn helper() {}\n");
+        assert!(!without.found_main);
+        assert!(!without.code.contains("__ts_user_main"));
     }
 }

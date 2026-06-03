@@ -30,6 +30,9 @@ proc-macro2 = { workspace = true }
 prettyplease = { workspace = true }
 dirs = { workspace = true }
 tokio = { workspace = true }
+portable-pty = "0.9.0"
+toml_edit = "0.25.5"
+ignore = "0.4.25"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
